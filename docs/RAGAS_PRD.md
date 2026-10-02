@@ -44,7 +44,7 @@
 | `youthlink-data-pipeline` | 수동 실행, 전체 수집, `policy`·`policy_region`·`policy_eligibility_code`만 적재, 삭제 정책 미반영 |
 | `policy_chunk` | 적재 코드 없음 |
 | `YouthLink_RAG` | `/health`만 존재, 파이프라인·엔드포인트 미구현 |
-| `rag_ragas_evaluation` | `db/ragas_schema.sql`만 존재 |
+| `rag_ragas_evaluation` | 패키지 뼈대, CLI, `config`, `db/ragas_schema.sql`만 존재 |
 
 ## RAGAS 입력
 
@@ -124,6 +124,19 @@
 | `trace` 필수 키 | `chunks` (`chunk_id`, `policy_no`, `chunk_index`, `chunk_type`, `content`, `score`), `latency_ms`, `prompt_tokens`, `completion_tokens`, `chat_model`, `retriever`, `top_k` |
 | `retrieved_contexts` | `[c.content for c in trace.chunks]` (score 내림차순) |
 
+## 오프라인 모드 (`run --offline`)
+
+| 항목 | 값 |
+| --- | --- |
+| 목적 | RAG 없이 데이터셋 → 채점 → DB 저장 경로 검증 |
+| RAG 호출 | 없음 |
+| `answer` | `ground_truth` |
+| `contexts` | `reference_contexts` → `[{"content": c} for c in reference_contexts]` |
+| `latency_ms` | NULL |
+| run 기록 | `rag_chat_model`·`rag_retriever`·`rag_top_k` NULL, `metadata.mode = "offline"` |
+| 기대 결과 | 지표 4개 1에 근접. 크게 낮으면 채점·매핑 오류 |
+| 비용 | 채점 LLM 호출 발생 (사용자 확인 후 실행) |
+
 ## DB 추가 테이블 (`db/ragas_schema.sql`)
 
 ### ragas_evaluation_run
@@ -194,11 +207,11 @@
 | `ragas_eval/config.py` | `DATABASE_URL`, `OPENAI_API_KEY`, `RAG_BASE_URL`, `GEN_MODEL`, `JUDGE_MODEL` |
 | `ragas_eval/policy_source.py` | `policy` → `Document` |
 | `ragas_eval/generate.py` | `TestsetGenerator` → `policy_no` 복원 → `golden_candidates.jsonl` |
-| `ragas_eval/dataset.py` | jsonl 로드, `reviewed` 필터, `source_updated_at` 검사 |
-| `ragas_eval/rag_client.py` | RAG 호출 |
-| `ragas_eval/scorer.py` | 지표 4개 `ascore` |
+| `ragas_eval/dataset.py` | jsonl 로드, `reviewed` 필터, `source_updated_at` 검사, `GoldenSample` 타입 |
+| `ragas_eval/rag_client.py` | RAG 호출, `RagResult` 타입 |
+| `ragas_eval/scorer.py` | 지표 4개 `ascore`, `ScoreResult` 타입 |
 | `ragas_eval/repository.py` | run/samples INSERT·UPDATE |
-| `ragas_eval/runner.py` | 실행 순서 1~5, `--repeat` |
+| `ragas_eval/runner.py` | 실행 순서 1~5, `--repeat`, `--offline` |
 | `db/ragas_schema.sql` | DDL |
 | `datasets/golden_vN.jsonl` | 확정 데이터셋 |
 | `k8s/ragas-eval-job.yaml` | 평가 Job |
@@ -209,6 +222,7 @@
 - `ragas_eval`: 프로젝트 자체 패키지 (RAGAS 기본 명령어 아님)
 - `python -m ragas_eval generate --testset-size 100 --out datasets/golden_candidates.jsonl`
 - `python -m ragas_eval run --golden datasets/golden_v1.jsonl --repeat 3`
+- `python -m ragas_eval run --golden datasets/golden_v1.jsonl --offline`
 
 ## 실행 환경
 
@@ -232,13 +246,44 @@
 | `load_policies.py` `__main__` 들여쓰기 수정 | `youthlink-data-pipeline` | ETL |
 | 평가 실행 주체 결정 | - | 팀 |
 
-## 체크리스트
+## 구현 계획
+
+| 단계 | 작업 | 방식 | 선행 |
+| --- | --- | --- | --- |
+| 1. 기반 | `pytest.ini`, `conftest.py`, 공유 타입 | 순차 | - |
+| 2. 독립 모듈 | `policy_source`, `dataset`, `rag_client`, `scorer`, `repository` | 병렬 5 | 1 |
+| 3. 조합 모듈 | `generate`, `runner` | 병렬 2 | `generate` ← `policy_source`, `dataset` / `runner` ← `dataset`, `rag_client`, `scorer`, `repository` |
+| 4. 배포 | `Dockerfile`, `k8s/ragas-eval-job.yaml` | 순차 | 3 |
+
+| 공유 타입 | 위치 | 사용처 |
+| --- | --- | --- |
+| `GoldenSample` | `dataset.py` | `generate`, `runner` |
+| `RagResult` (`answer`, `retrieved_contexts`, `chunks`, `latency_ms`, `tokens`) | `rag_client.py` | `runner` |
+| `ScoreResult` (지표 4개, `errors`) | `scorer.py` | `runner`, `repository` |
+
+## 구현 체크리스트
+
+- [ ] 1-1. `pytest.ini` (`db`, `llm` 마커, 기본 `-m "not llm"`)
+- [ ] 1-2. `tests/conftest.py` (가짜 정책·샘플 fixture)
+- [ ] 1-3. `GoldenSample`, `RagResult`, `ScoreResult` 정의
+- [ ] 2-1. `policy_source` + 테스트
+- [ ] 2-2. `dataset` + 테스트
+- [ ] 2-3. `rag_client` + 테스트 (`httpx.MockTransport`)
+- [ ] 2-4. `scorer` + 테스트 (`AsyncMock`, NaN → NULL)
+- [ ] 2-5. `repository` + 테스트 (mock, `db` 마커 통합)
+- [ ] 3-1. `generate` + 테스트
+- [ ] 3-2. `runner` + 테스트 (`--repeat`, `--offline`, 재개, 실패 시 `FAILED`)
+- [ ] 4-1. `Dockerfile` (Python 3.12, `datasets/` 포함)
+- [ ] 4-2. `k8s/ragas-eval-job.yaml`
+
+## 운영 체크리스트
 
 - [ ] 1. `db/ragas_schema.sql` 적용
 - [ ] 2. `policy` → `Document` → `TestsetGenerator`로 `question`, `ground_truth` 생성
 - [ ] 3. 검수 → `golden_v1.jsonl` 고정
-- [ ] 4. run INSERT, 질문 samples INSERT
-- [ ] 5. RAG 호출 → `answer`, `contexts` UPDATE
-- [ ] 6. 채점 → 지표 4개 UPDATE
-- [ ] 7. 집계 → run UPDATE
-- [ ] 8. 3회 반복 → 평균·노이즈 폭 기록
+- [ ] 4. `run --offline`으로 채점 경로 검증
+- [ ] 5. run INSERT, 질문 samples INSERT
+- [ ] 6. RAG 호출 → `answer`, `contexts` UPDATE
+- [ ] 7. 채점 → 지표 4개 UPDATE
+- [ ] 8. 집계 → run UPDATE
+- [ ] 9. 3회 반복 → 평균·노이즈 폭 기록
