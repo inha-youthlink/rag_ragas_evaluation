@@ -331,7 +331,7 @@
 - [x] 2-5. `repository` + 테스트 (mock, `db` 마커 통합, `mode`·지표 6개)
 - [x] 2-6. `scorer` 지표 6개 확장 + 모드별 적용 지표
 - [x] 2-7. `baseline_client` + 테스트 (`AsyncMock` OpenAI)
-- [ ] 3-1. `generate` + 테스트
+- [x] 3-1. `generate` + 테스트
 - [ ] 3-2. `runner` + 테스트 (`--repeat`, `--offline`, `--baseline`, 재개, 실패 시 `FAILED`)
 - [ ] 4-1. `Dockerfile` (Python 3.12, `datasets/` 포함)
 - [ ] 4-2. `k8s/ragas-eval-job.yaml`

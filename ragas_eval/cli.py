@@ -26,6 +26,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
 
     if args.command == "generate":
-        generate.generate(testset_size=args.testset_size, out_path=args.out)
+        summary = generate.generate(testset_size=args.testset_size, out_path=args.out)
+        print(f"후보 {summary.written}건 저장, 정책 매칭 실패·빈 값 {summary.dropped}건 제외: {args.out}")
     elif args.command == "run":
         runner.run(golden_path=args.golden, repeat=args.repeat, offline=args.offline)
