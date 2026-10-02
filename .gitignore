@@ -6,3 +6,6 @@ __pycache__/
 .omc/
 .pytest_cache/
 datasets/golden_candidates.jsonl
+
+# Claude Code 로컬 권한 설정
+.claude/settings.local.json
