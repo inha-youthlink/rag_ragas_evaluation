@@ -32,14 +32,3 @@ python -m ragas_eval run --golden datasets/golden_v1.jsonl --offline  # RAG 없�
 ```bash
 pytest
 ```
-
-## 작업 방식
-
-Claude Code 기반으로 PRD(요구사항·설계) → 코드 순서로 진행합니다.
-
-| 단계 | 문서 | 역할 |
-| --- | --- | --- |
-| PRD | `docs/RAGAS_PRD.md`, `docs/Schema.md` | 요구사항·기술 설계·작업 목록을 먼저 확정 |
-| 상시 규칙 | `CLAUDE.md` | 매 세션 적용되는 기술 스택·필수·금지·검증 규칙 |
-| 상세 규칙 | `.claude/skills/` | 작업별로 필요할 때만 불러오는 규칙 (예: `/ragas-eval-test`) |
-| 검증 | `tests/`, 완료 보고 | 테스트 통과와 미검증 사항 확인 후 논리 단위로 커밋 |
