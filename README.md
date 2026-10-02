@@ -24,6 +24,7 @@ psql -d youthlink -f db/ragas_schema.sql
 ```bash
 python -m ragas_eval generate --testset-size 100 --out datasets/golden_candidates.jsonl
 python -m ragas_eval run --golden datasets/golden_v1.jsonl --repeat 3
+python -m ragas_eval run --golden datasets/golden_v1.jsonl --offline  # RAG 없이 채점 경로 검증
 ```
 
 ## 테스트

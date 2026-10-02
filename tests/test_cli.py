@@ -1,7 +1,8 @@
 # CLI 서브커맨드 인자 파싱 테스트
 import pytest
 
-from ragas_eval.cli import build_parser
+from ragas_eval import runner
+from ragas_eval.cli import build_parser, main
 
 
 def test_generate_uses_default_options():
@@ -23,3 +24,24 @@ def test_run_parses_golden_and_repeat():
 def test_run_requires_golden():
     with pytest.raises(SystemExit):
         build_parser().parse_args(["run"])
+
+
+def test_run_offline_defaults_to_false():
+    args = build_parser().parse_args(["run", "--golden", "datasets/golden_v1.jsonl"])
+
+    assert args.offline is False
+
+
+def test_run_parses_offline_flag():
+    args = build_parser().parse_args(["run", "--golden", "datasets/golden_v1.jsonl", "--offline"])
+
+    assert args.offline is True
+
+
+def test_main_passes_offline_to_runner(monkeypatch):
+    calls = []
+    monkeypatch.setattr(runner, "run", lambda **kwargs: calls.append(kwargs))
+
+    main(["run", "--golden", "datasets/golden_v1.jsonl", "--offline"])
+
+    assert calls == [{"golden_path": "datasets/golden_v1.jsonl", "repeat": 1, "offline": True}]

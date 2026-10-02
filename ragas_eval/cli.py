@@ -16,6 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = sub.add_parser("run", help="확정 데이터셋으로 평가 실행")
     run_parser.add_argument("--golden", required=True)
     run_parser.add_argument("--repeat", type=int, default=1)
+    run_parser.add_argument("--offline", action="store_true", help="RAG 대신 ground_truth·reference_contexts로 채점 경로 검증")
 
     return parser
 
@@ -26,4 +27,4 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.command == "generate":
         generate.generate(testset_size=args.testset_size, out_path=args.out)
     elif args.command == "run":
-        runner.run(golden_path=args.golden, repeat=args.repeat)
+        runner.run(golden_path=args.golden, repeat=args.repeat, offline=args.offline)
