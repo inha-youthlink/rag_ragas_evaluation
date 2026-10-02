@@ -1,7 +1,7 @@
 # CLI 서브커맨드 인자 파싱 테스트
 import pytest
 
-from ragas_eval import runner
+from ragas_eval.runner import runner
 from ragas_eval.cli import build_parser, main
 
 

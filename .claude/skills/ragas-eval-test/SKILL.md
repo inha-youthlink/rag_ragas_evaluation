@@ -96,6 +96,7 @@ def test_contexts_follow_chunk_order():
 
 | 증상 | 원인 | 대응 |
 | --- | --- | --- |
+| mock이 적용 안 됨 | 패키지(`ragas_eval.runner`)에 patch | 모듈(`ragas_eval.runner.runner`)을 import해 그 속성에 patch |
 | 테스트가 실제 키·DB를 읽음 | `Settings`가 `.env`를 읽음 | `Settings(_env_file=None)` |
 | 환경변수 바꿔도 반영 안 됨 | `get_settings`의 `lru_cache` | 테스트 전후 `get_settings.cache_clear()` |
 | `0.8 != Decimal('0.800')` | `NUMERIC(4,3)`은 `Decimal`로 읽힘 | `Decimal("0.800")`과 비교하거나 `float()` 변환 |

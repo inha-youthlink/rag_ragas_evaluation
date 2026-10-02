@@ -205,13 +205,13 @@
 | `ragas_eval/__main__.py` | 진입점 |
 | `ragas_eval/cli.py` | `generate`, `run` |
 | `ragas_eval/config.py` | `DATABASE_URL`, `OPENAI_API_KEY`, `RAG_BASE_URL`, `GEN_MODEL`, `JUDGE_MODEL` |
-| `ragas_eval/policy_source.py` | `policy` → `Document` |
-| `ragas_eval/generate.py` | `TestsetGenerator` → `policy_no` 복원 → `golden_candidates.jsonl` |
-| `ragas_eval/dataset.py` | jsonl 로드, `reviewed` 필터, `source_updated_at` 검사, `GoldenSample` 타입 |
-| `ragas_eval/rag_client.py` | RAG 호출, `RagResult` 타입 |
-| `ragas_eval/scorer.py` | 지표 4개 `ascore`, `ScoreResult` 타입 |
-| `ragas_eval/repository.py` | run/samples INSERT·UPDATE |
-| `ragas_eval/runner.py` | 실행 순서 1~5, `--repeat`, `--offline` |
+| `ragas_eval/policy_source/policy_source.py` | `policy` → `Document` |
+| `ragas_eval/generate/generate.py` | `TestsetGenerator` → `policy_no` 복원 → `golden_candidates.jsonl` |
+| `ragas_eval/dataset/dataset.py` | jsonl 로드, `reviewed` 필터, `source_updated_at` 검사, `GoldenSample` 타입 |
+| `ragas_eval/rag_client/rag_client.py` | RAG 호출, `RagResult` 타입 |
+| `ragas_eval/scorer/scorer.py` | 지표 4개 `ascore`, `ScoreResult` 타입 |
+| `ragas_eval/repository/repository.py` | run/samples INSERT·UPDATE |
+| `ragas_eval/runner/runner.py` | 실행 순서 1~5, `--repeat`, `--offline` |
 | `db/ragas_schema.sql` | DDL |
 | `datasets/golden_vN.jsonl` | 확정 데이터셋 |
 | `k8s/ragas-eval-job.yaml` | 평가 Job |
@@ -257,9 +257,9 @@
 
 | 공유 타입 | 위치 | 사용처 |
 | --- | --- | --- |
-| `GoldenSample` | `dataset.py` | `generate`, `runner` |
-| `RagResult` (`answer`, `retrieved_contexts`, `chunks`, `latency_ms`, `tokens`) | `rag_client.py` | `runner` |
-| `ScoreResult` (지표 4개, `errors`) | `scorer.py` | `runner`, `repository` |
+| `GoldenSample` | `dataset/dataset.py` | `generate`, `runner` |
+| `RagResult` (`answer`, `retrieved_contexts`, `chunks`, `latency_ms`, `tokens`) | `rag_client/rag_client.py` | `runner` |
+| `ScoreResult` (지표 4개, `errors`) | `scorer/scorer.py` | `runner`, `repository` |
 
 ## 구현 체크리스트
 

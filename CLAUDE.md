@@ -9,15 +9,15 @@ YouthLink RAG를 RAGAS로 평가하는 저장소다. 서비스 DB의 `policy`로
 - Python 3.12, `ragas` 0.4.x, `langchain-core` 1.x, `langchain-community<0.4`, `psycopg` 3, `httpx`, `pydantic-settings`, `pytest`
 - 지표는 v0.4 API(`ragas.metrics.collections`, `await metric.ascore(...)`)를 쓴다.
 - 패키지는 `ragas_eval/`, 진입점은 `python -m ragas_eval {generate|run}`이다.
-- 모듈 역할은 고정한다.
-  - `config.py`: 환경변수
-  - `policy_source.py`: `policy` → `Document`
-  - `generate.py`: `TestsetGenerator` → 후보 jsonl
-  - `dataset.py`: golden jsonl 로드·검사
-  - `rag_client.py`: RAG 호출
-  - `scorer.py`: 채점
-  - `repository.py`: 평가 테이블 쓰기
-  - `runner.py`: 실행 순서 조율
+- 모듈은 `ragas_eval/<모듈>/<모듈>.py` 폴더 단위로 두고 역할은 고정한다. import는 `from ragas_eval.<모듈> import <모듈>`.
+  - `config.py`: 환경변수 (최상위)
+  - `policy_source/`: `policy` → `Document`
+  - `generate/`: `TestsetGenerator` → 후보 jsonl
+  - `dataset/`: golden jsonl 로드·검사
+  - `rag_client/`: RAG 호출
+  - `scorer/`: 채점
+  - `repository/`: 평가 테이블 쓰기
+  - `runner/`: 실행 순서 조율
 - 데이터셋은 `datasets/golden_vN.jsonl`(git), 평가 결과는 DB `ragas_evaluation_run`, `ragas_evaluation_samples`에 둔다.
 - 평가는 K8s Job으로 실행하고, `generate`는 로컬에서 실행한다.
 

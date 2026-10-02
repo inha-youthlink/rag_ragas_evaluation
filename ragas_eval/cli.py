@@ -2,7 +2,8 @@
 import argparse
 from collections.abc import Sequence
 
-from ragas_eval import generate, runner
+from ragas_eval.generate import generate
+from ragas_eval.runner import runner
 
 
 def build_parser() -> argparse.ArgumentParser:
