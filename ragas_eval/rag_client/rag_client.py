@@ -16,3 +16,6 @@ class RagResult(BaseModel):
     chunks: list[dict[str, Any]]
     latency_ms: int | None = Field(default=None, ge=0, le=PG_INTEGER_MAX)
     tokens: dict[str, int] = Field(default_factory=dict)
+    chat_model: str | None = None
+    retriever: str | None = None
+    top_k: int | None = Field(default=None, ge=1)

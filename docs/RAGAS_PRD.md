@@ -123,6 +123,7 @@
 | 응답 | `PipelineOutput` = `{answer, policies[], trace}` |
 | `trace` 필수 키 | `chunks` (`chunk_id`, `policy_no`, `chunk_index`, `chunk_type`, `content`, `score`), `latency_ms`, `prompt_tokens`, `completion_tokens`, `chat_model`, `retriever`, `top_k` |
 | `retrieved_contexts` | `[c.content for c in trace.chunks]` (score 내림차순) |
+| run 기록 | `trace.chat_model`·`retriever`·`top_k` → `RagResult` → `ragas_evaluation_run.rag_chat_model`·`rag_retriever`·`rag_top_k` |
 
 ## 오프라인 모드 (`run --offline`)
 
@@ -258,7 +259,7 @@
 | 공유 타입 | 위치 | 사용처 |
 | --- | --- | --- |
 | `GoldenSample` | `dataset/dataset.py` | `generate`, `runner` |
-| `RagResult` (`answer`, `retrieved_contexts`, `chunks`, `latency_ms`, `tokens`) | `rag_client/rag_client.py` | `runner` |
+| `RagResult` (`answer`, `retrieved_contexts`, `chunks`, `latency_ms`, `tokens`, `chat_model`, `retriever`, `top_k`) | `rag_client/rag_client.py` | `runner` |
 | `ScoreResult` (지표 4개, `errors`) | `scorer/scorer.py` | `runner`, `repository` |
 
 ## 구현 체크리스트

@@ -21,11 +21,25 @@ def test_rag_payload_values_are_kept(rag_payload):
     assert result.tokens == {"prompt_tokens": 850, "completion_tokens": 40}
 
 
-def test_offline_result_has_no_latency_or_tokens():
+def test_rag_settings_are_kept():
+    result = RagResult(
+        answer="a", retrieved_contexts=[], chunks=[], chat_model="test-chat-model", retriever="vector", top_k=10
+    )
+
+    assert (result.chat_model, result.retriever, result.top_k) == ("test-chat-model", "vector", 10)
+
+
+def test_offline_result_has_no_latency_tokens_or_rag_settings():
     result = RagResult(answer="정답", retrieved_contexts=["근거"], chunks=[{"content": "근거"}])
 
     assert result.latency_ms is None
     assert result.tokens == {}
+    assert (result.chat_model, result.retriever, result.top_k) == (None, None, None)
+
+
+def test_zero_top_k_fails():
+    with pytest.raises(ValidationError):
+        RagResult(answer="a", retrieved_contexts=[], chunks=[], top_k=0)
 
 
 @pytest.mark.parametrize("latency_ms", [-1, 2_147_483_648])
