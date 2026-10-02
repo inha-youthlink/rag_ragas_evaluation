@@ -59,14 +59,14 @@
 
 | 항목 | 값 |
 | --- | --- |
-| 대상 | `description` NOT NULL, `application_end_date` NULL 또는 기준일 이후 |
+| 대상 | `description` 비어 있지 않음(NULL·공백 제외), `application_end_date` NULL 또는 기준일 당일 이후 |
 | 원천 텍스트 | `policy_name`, `description`, `support_content`, `min_age`/`max_age`, `min_income`/`max_income`/`income_etc`, `application_start_date`/`application_end_date`, `application_method`, `submission_documents`, `screening_method`, `additional_qualification`, `participation_exclusion` |
 | 입력 변환 | 정책 1건 → `Document` 1개 (`metadata`: `policy_no`, `source_updated_at`) |
 | 생성기 | `TestsetGenerator(llm, embedding_model).generate_with_langchain_docs(docs, testset_size, query_distribution)` |
 | 질문 유형 | `[(SingleHopSpecificQuerySynthesizer(llm), 1.0)]` |
 | 한국어 | 생성기 프롬프트 한국어 adapt |
 | 모델 | RAG `chat_model`과 다른 LLM, `text-embedding-3-small` |
-| `policy_no` 복원 | `reference_contexts` ↔ `Document.page_content` 매칭 |
+| `policy_no` 복원 | `reference_contexts`가 포함된 `Document.page_content` 매칭 (생성기가 문서를 분할할 수 있어 일치가 아닌 포함 검사) |
 | 사전 검증 | 10건 시험 생성 (짧은 문서 누락, 한국어 품질) |
 | 검수 | `reviewed = true`만 사용 |
 | 규모 | 100건 내외 |
@@ -267,7 +267,7 @@
 - [x] 1-1. `pytest.ini` (`db`, `llm` 마커, 기본 `-m "not llm"`)
 - [x] 1-2. `tests/conftest.py` (가짜 정책·샘플 fixture)
 - [x] 1-3. `GoldenSample`, `RagResult`, `ScoreResult` 정의
-- [ ] 2-1. `policy_source` + 테스트
+- [x] 2-1. `policy_source` + 테스트
 - [ ] 2-2. `dataset` + 테스트
 - [ ] 2-3. `rag_client` + 테스트 (`httpx.MockTransport`)
 - [ ] 2-4. `scorer` + 테스트 (`AsyncMock`, NaN → NULL)

@@ -1,10 +1,13 @@
 # 테스트 공용 fixture (가짜 정책·데이터셋·RAG 응답, 임시 DB URL)
 import os
+import re
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
+from psycopg.conninfo import conninfo_to_dict
 
 KST = timezone(timedelta(hours=9))
+TEST_DB_NAME = re.compile(r"(^|_)test(_|$)")
 
 
 @pytest.fixture
@@ -73,4 +76,6 @@ def test_database_url() -> str:
     url = os.environ.get("TEST_DATABASE_URL")
     if not url:
         pytest.skip("TEST_DATABASE_URL이 없어 DB 통합 테스트를 건너뜀")
+    if not TEST_DB_NAME.search(conninfo_to_dict(url).get("dbname", "")):
+        pytest.fail("TEST_DATABASE_URL의 DB 이름에 'test' 구분 단어가 없음. 공유·개발 DB 보호를 위해 중단")
     return url
