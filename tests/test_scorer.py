@@ -1,8 +1,20 @@
-# ScoreResult 타입 검증 테스트
+# ScoreResult 타입 검증과 지표 4개 채점 테스트 (지표는 AsyncMock, 실제 LLM 호출 없음)
+import asyncio
+import logging
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import pytest
+from openai import AsyncOpenAI
 from pydantic import ValidationError
 
-from ragas_eval.scorer.scorer import ScoreResult
+from ragas_eval.scorer import scorer
+from ragas_eval.scorer.scorer import METRIC_NAMES, ScoreResult, build_metrics, score_sample
+
+QUESTION = "가짜 질문"
+ANSWER = "가짜 답변"
+CONTEXTS = ["근거 1", "근거 2"]
+REFERENCE = "가짜 정답"
 
 
 def test_score_result_keeps_four_metrics():
@@ -28,3 +40,150 @@ def test_failed_metric_is_none_with_error():
 def test_out_of_range_or_nan_score_fails(value):
     with pytest.raises(ValidationError):
         ScoreResult(faithfulness=value)
+
+
+def fake_metrics(**values):
+    """지표명 → ascore 반환값(숫자) 또는 예외. 지정하지 않은 지표는 0.5."""
+    metrics = {}
+    for name in METRIC_NAMES:
+        value = values.get(name, 0.5)
+        metric = SimpleNamespace(ascore=AsyncMock())
+        if isinstance(value, BaseException):
+            metric.ascore.side_effect = value
+        else:
+            metric.ascore.return_value = SimpleNamespace(value=value)
+        metrics[name] = metric
+    return metrics
+
+
+def score(metrics):
+    return asyncio.run(
+        score_sample(metrics, question=QUESTION, answer=ANSWER, retrieved_contexts=CONTEXTS, reference=REFERENCE)
+    )
+
+
+def test_each_metric_receives_its_inputs():
+    metrics = fake_metrics()
+
+    score(metrics)
+
+    metrics["context_precision"].ascore.assert_awaited_once_with(
+        user_input=QUESTION, retrieved_contexts=CONTEXTS, reference=REFERENCE
+    )
+    metrics["context_recall"].ascore.assert_awaited_once_with(
+        user_input=QUESTION, retrieved_contexts=CONTEXTS, reference=REFERENCE
+    )
+    metrics["faithfulness"].ascore.assert_awaited_once_with(
+        user_input=QUESTION, response=ANSWER, retrieved_contexts=CONTEXTS
+    )
+    metrics["answer_relevancy"].ascore.assert_awaited_once_with(user_input=QUESTION, response=ANSWER)
+
+
+def test_metric_values_map_to_score_result():
+    metrics = fake_metrics(context_precision=0.9, context_recall=1, faithfulness=0.0, answer_relevancy=0.75)
+
+    result = score(metrics)
+
+    assert result == ScoreResult(context_precision=0.9, context_recall=1.0, faithfulness=0.0, answer_relevancy=0.75)
+
+
+@pytest.mark.parametrize(
+    ("value", "error"),
+    [
+        pytest.param(TimeoutError("비밀-메시지"), "TimeoutError", id="exception"),
+        pytest.param(float("nan"), "NaN", id="nan"),
+        pytest.param(None, "InvalidValue", id="none"),
+        pytest.param(1.5, "InvalidValue", id="out-of-range"),
+        pytest.param(float("inf"), "InvalidValue", id="inf"),
+        pytest.param("0.5", "InvalidValue", id="string"),
+        pytest.param(True, "InvalidValue", id="bool"),
+    ],
+)
+def test_failed_metric_becomes_none_and_others_are_kept(value, error):
+    metrics = fake_metrics(faithfulness=value)
+
+    result = score(metrics)
+
+    assert result.faithfulness is None
+    assert result.errors == {"faithfulness": error}
+    assert (result.context_precision, result.context_recall, result.answer_relevancy) == (0.5, 0.5, 0.5)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        pytest.param(1.0000000000000002, 1.0, id="float-error-above-1"),
+        pytest.param(-1e-12, 0.0, id="float-error-below-0"),
+    ],
+)
+def test_tiny_float_error_is_clamped(value, expected):
+    metrics = fake_metrics(answer_relevancy=value)
+
+    result = score(metrics)
+
+    assert result.answer_relevancy == expected
+    assert result.errors == {}
+
+
+def test_result_without_value_is_invalid():
+    metrics = fake_metrics()
+    metrics["faithfulness"].ascore.return_value = object()
+
+    result = score(metrics)
+
+    assert result.faithfulness is None
+    assert result.errors == {"faithfulness": "InvalidValue"}
+
+
+def test_missing_metric_object_fails():
+    metrics = fake_metrics()
+    del metrics["answer_relevancy"]
+
+    with pytest.raises(ValueError, match="answer_relevancy"):
+        score(metrics)
+
+
+def test_all_metrics_failing_keeps_every_error():
+    metrics = fake_metrics(**{name: RuntimeError() for name in METRIC_NAMES})
+
+    result = score(metrics)
+
+    assert result.model_dump(exclude={"errors"}) == dict.fromkeys(METRIC_NAMES)
+    assert result.errors == dict.fromkeys(METRIC_NAMES, "RuntimeError")
+
+
+def test_failure_is_logged_without_exception_message(caplog):
+    metrics = fake_metrics(context_recall=ValueError("비밀-메시지"))
+
+    with caplog.at_level(logging.WARNING, logger=scorer.__name__):
+        score(metrics)
+
+    assert "context_recall" in caplog.text
+    assert "ValueError" in caplog.text
+    assert "비밀-메시지" not in caplog.text
+
+
+def test_cancellation_is_not_swallowed():
+    metrics = fake_metrics(faithfulness=asyncio.CancelledError())
+
+    with pytest.raises(asyncio.CancelledError):
+        score(metrics)
+
+
+def test_build_metrics_creates_four_metrics_without_network(monkeypatch):
+    # ragas의 track은 @silent로 예외를 삼키므로 raise 대신 호출 기록으로 확인한다
+    posts = []
+    monkeypatch.setattr("ragas._analytics.requests.post", lambda *args, **kwargs: posts.append(args))
+    client = AsyncOpenAI(api_key="test-key", base_url="http://127.0.0.1:9")
+
+    metrics = build_metrics(client, judge_model="test-judge-model", embedding_model="test-embedding-model")
+    asyncio.run(client.close())
+
+    assert posts == []
+    assert tuple(metrics) == METRIC_NAMES
+    assert [type(m).__name__ for m in metrics.values()] == [
+        "ContextPrecision",
+        "ContextRecall",
+        "Faithfulness",
+        "AnswerRelevancy",
+    ]
