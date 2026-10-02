@@ -263,9 +263,9 @@
 
 ## 구현 체크리스트
 
-- [ ] 1-1. `pytest.ini` (`db`, `llm` 마커, 기본 `-m "not llm"`)
-- [ ] 1-2. `tests/conftest.py` (가짜 정책·샘플 fixture)
-- [ ] 1-3. `GoldenSample`, `RagResult`, `ScoreResult` 정의
+- [x] 1-1. `pytest.ini` (`db`, `llm` 마커, 기본 `-m "not llm"`)
+- [x] 1-2. `tests/conftest.py` (가짜 정책·샘플 fixture)
+- [x] 1-3. `GoldenSample`, `RagResult`, `ScoreResult` 정의
 - [ ] 2-1. `policy_source` + 테스트
 - [ ] 2-2. `dataset` + 테스트
 - [ ] 2-3. `rag_client` + 테스트 (`httpx.MockTransport`)
