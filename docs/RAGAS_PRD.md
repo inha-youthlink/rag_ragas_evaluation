@@ -142,6 +142,7 @@
 - `--repeat 3` → 1~5를 3회 (run 3행)
 - 이전 run 덮어쓰기 없음
 - 재개: `answer IS NULL` → 3부터, 지표 전부 NULL → 4부터
+- 재개 대상: `RUNNING`으로 남은 run만 (Pod 강제 종료·시간 초과). `FAILED` run은 재개하지 않고 새 run으로 다시 실행 (이전 run 수정 금지, run 1개 = 같은 조건 1회 실행)
 - 성적표: `ragas_evaluation_run.avg_*` (실행별), `ragas_evaluation_samples` (샘플별)
 
 ## RAG 연동 계약
