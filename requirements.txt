@@ -1,0 +1,7 @@
+ragas>=0.4
+langchain-core>=1.0
+openai>=3.0
+psycopg[binary]>=3.2
+httpx>=0.28
+pydantic-settings>=2.15
+pytest>=9.0
