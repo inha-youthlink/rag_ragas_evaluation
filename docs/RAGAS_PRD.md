@@ -327,7 +327,7 @@
 - [x] 2-2. `dataset` + 테스트
 - [x] 2-3. `rag_client` + 테스트 (`httpx.MockTransport`)
 - [x] 2-4. `scorer` + 테스트 (`AsyncMock`, NaN → NULL)
-- [ ] 2-5. `repository` + 테스트 (mock, `db` 마커 통합, `mode`·지표 6개)
+- [x] 2-5. `repository` + 테스트 (mock, `db` 마커 통합, `mode`·지표 6개)
 - [x] 2-6. `scorer` 지표 6개 확장 + 모드별 적용 지표
 - [x] 2-7. `baseline_client` + 테스트 (`AsyncMock` OpenAI)
 - [ ] 3-1. `generate` + 테스트

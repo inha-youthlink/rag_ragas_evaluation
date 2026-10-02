@@ -2,12 +2,16 @@
 import os
 import re
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
+import psycopg
 import pytest
 from psycopg.conninfo import conninfo_to_dict
 
 KST = timezone(timedelta(hours=9))
 TEST_DB_NAME = re.compile(r"(^|_)test(_|$)")
+LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1"}
+RAGAS_SCHEMA_SQL = Path(__file__).resolve().parents[1] / "db" / "ragas_schema.sql"
 
 
 @pytest.fixture
@@ -74,11 +78,38 @@ def rag_payload() -> dict:
     }
 
 
-@pytest.fixture
-def test_database_url() -> str:
+def _checked_test_database_url() -> str:
     url = os.environ.get("TEST_DATABASE_URL")
     if not url:
         pytest.skip("TEST_DATABASE_URL이 없어 DB 통합 테스트를 건너뜀")
-    if not TEST_DB_NAME.search(conninfo_to_dict(url).get("dbname", "")):
+    info = conninfo_to_dict(url)
+    if not TEST_DB_NAME.search(info.get("dbname", "")):
         pytest.fail("TEST_DATABASE_URL의 DB 이름에 'test' 구분 단어가 없음. 공유·개발 DB 보호를 위해 중단")
+    if info.get("host", "") not in LOCAL_DB_HOSTS:
+        pytest.fail("TEST_DATABASE_URL의 host가 로컬이 아님. 원격 DB 보호를 위해 중단")
     return url
+
+
+@pytest.fixture
+def test_database_url() -> str:
+    return _checked_test_database_url()
+
+
+@pytest.fixture(scope="session")
+def eval_schema_url() -> str:
+    """임시 DB에 평가 테이블 DDL을 적용한다. 두 번 적용해 재실행 안전성도 함께 확인한다."""
+    url = _checked_test_database_url()
+    with psycopg.connect(url, autocommit=True) as conn:
+        for _ in range(2):
+            conn.execute(RAGAS_SCHEMA_SQL.read_text(encoding="utf-8"))
+    return url
+
+
+@pytest.fixture
+def eval_conn(eval_schema_url):
+    """테스트마다 롤백되는 연결. repository 함수는 커밋하지 않으므로 쓴 행은 남지 않는다."""
+    with psycopg.connect(eval_schema_url) as conn:
+        try:
+            yield conn
+        finally:
+            conn.rollback()
