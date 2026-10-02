@@ -1,0 +1,89 @@
+-- RAGAS 평가 실행과 샘플별 채점 결과를 저장하는 테이블
+--
+-- Run youthlink-data-pipeline/db/extensions.sql before this file (gen_random_uuid).
+
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS ragas_evaluation_run (
+    run_id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    dataset_version         VARCHAR(50) NOT NULL,
+    repeat_no               INTEGER NOT NULL DEFAULT 1,
+
+    rag_chat_model          VARCHAR(100),
+    rag_retriever           VARCHAR(50),
+    rag_top_k               INTEGER,
+
+    judge_model             VARCHAR(100) NOT NULL,
+    embedding_model         VARCHAR(100) NOT NULL,
+
+    status                  VARCHAR(20) NOT NULL DEFAULT 'RUNNING',
+    sample_count            INTEGER,
+
+    avg_context_precision   NUMERIC(4, 3),
+    avg_context_recall      NUMERIC(4, 3),
+    avg_faithfulness        NUMERIC(4, 3),
+    avg_answer_relevancy    NUMERIC(4, 3),
+
+    started_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    finished_at             TIMESTAMPTZ,
+
+    metadata                JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+    CONSTRAINT chk_ragas_run_repeat_no
+        CHECK (repeat_no >= 1),
+
+    CONSTRAINT chk_ragas_run_status
+        CHECK (status IN ('RUNNING', 'SUCCEEDED', 'FAILED'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ragas_run_started
+    ON ragas_evaluation_run (started_at);
+
+CREATE TABLE IF NOT EXISTS ragas_evaluation_samples (
+    id                  BIGSERIAL PRIMARY KEY,
+    run_id              UUID NOT NULL,
+    sample_id           VARCHAR(50) NOT NULL,
+    policy_no           VARCHAR(30),
+
+    question            TEXT NOT NULL,
+    answer              TEXT,
+    ground_truth        TEXT,
+    contexts            JSONB NOT NULL DEFAULT '[]'::jsonb,
+
+    context_precision   NUMERIC(4, 3),
+    context_recall      NUMERIC(4, 3),
+    faithfulness        NUMERIC(4, 3),
+    answer_relevancy    NUMERIC(4, 3),
+
+    latency_ms          INTEGER,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    metadata            JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+    CONSTRAINT fk_ragas_samples_run
+        FOREIGN KEY (run_id)
+        REFERENCES ragas_evaluation_run (run_id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT uq_ragas_samples_run_sample
+        UNIQUE (run_id, sample_id),
+
+    CONSTRAINT chk_ragas_samples_context_precision
+        CHECK (context_precision IS NULL OR context_precision BETWEEN 0 AND 1),
+
+    CONSTRAINT chk_ragas_samples_context_recall
+        CHECK (context_recall IS NULL OR context_recall BETWEEN 0 AND 1),
+
+    CONSTRAINT chk_ragas_samples_faithfulness
+        CHECK (faithfulness IS NULL OR faithfulness BETWEEN 0 AND 1),
+
+    CONSTRAINT chk_ragas_samples_answer_relevancy
+        CHECK (answer_relevancy IS NULL OR answer_relevancy BETWEEN 0 AND 1)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ragas_samples_run
+    ON ragas_evaluation_samples (run_id);
+
+CREATE INDEX IF NOT EXISTS idx_ragas_samples_policy
+    ON ragas_evaluation_samples (policy_no);
+
+COMMIT;
