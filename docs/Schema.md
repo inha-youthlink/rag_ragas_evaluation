@@ -63,6 +63,7 @@ erDiagram
         uuid run_id PK
         varchar dataset_version
         int repeat_no
+        varchar mode
     }
     RAGAS_EVALUATION_SAMPLES {
         bigint id PK
@@ -227,6 +228,7 @@ erDiagram
 | run_id | UUID | NOT NULL | gen_random_uuid() | PK |
 | dataset_version | VARCHAR(50) | NOT NULL | | |
 | repeat_no | INTEGER | NOT NULL | 1 | CHECK >= 1 |
+| mode | VARCHAR(20) | NOT NULL | 'rag' | CHECK IN ('rag', 'baseline', 'offline') |
 | rag_chat_model | VARCHAR(100) | NULL | | |
 | rag_retriever | VARCHAR(50) | NULL | | |
 | rag_top_k | INTEGER | NULL | | |
@@ -238,6 +240,8 @@ erDiagram
 | avg_context_recall | NUMERIC(4,3) | NULL | | |
 | avg_faithfulness | NUMERIC(4,3) | NULL | | |
 | avg_answer_relevancy | NUMERIC(4,3) | NULL | | |
+| avg_factual_correctness | NUMERIC(4,3) | NULL | | |
+| avg_reference_faithfulness | NUMERIC(4,3) | NULL | | |
 | started_at | TIMESTAMPTZ | NOT NULL | NOW() | |
 | finished_at | TIMESTAMPTZ | NULL | | |
 | metadata | JSONB | NOT NULL | '{}'::jsonb | |
@@ -258,6 +262,8 @@ erDiagram
 | context_recall | NUMERIC(4,3) | NULL | | CHECK 0 ~ 1 |
 | faithfulness | NUMERIC(4,3) | NULL | | CHECK 0 ~ 1 |
 | answer_relevancy | NUMERIC(4,3) | NULL | | CHECK 0 ~ 1 |
+| factual_correctness | NUMERIC(4,3) | NULL | | CHECK 0 ~ 1 |
+| reference_faithfulness | NUMERIC(4,3) | NULL | | CHECK 0 ~ 1 |
 | latency_ms | INTEGER | NULL | | |
 | created_at | TIMESTAMPTZ | NOT NULL | NOW() | |
 | metadata | JSONB | NOT NULL | '{}'::jsonb | |
@@ -285,5 +291,6 @@ erDiagram
 | chat_message | idx_chat_message_room_created | room_id, created_at | B-tree |
 | message_policy_ref | idx_message_policy_ref_policy | policy_no | B-tree |
 | ragas_evaluation_run | idx_ragas_run_started | started_at | B-tree |
+| ragas_evaluation_run | idx_ragas_run_mode | mode, dataset_version | B-tree |
 | ragas_evaluation_samples | idx_ragas_samples_run | run_id | B-tree |
 | ragas_evaluation_samples | idx_ragas_samples_policy | policy_no | B-tree |

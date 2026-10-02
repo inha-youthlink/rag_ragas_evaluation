@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS ragas_evaluation_run (
     run_id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     dataset_version         VARCHAR(50) NOT NULL,
     repeat_no               INTEGER NOT NULL DEFAULT 1,
+    mode                    VARCHAR(20) NOT NULL DEFAULT 'rag',
 
     rag_chat_model          VARCHAR(100),
     rag_retriever           VARCHAR(50),
@@ -23,6 +24,8 @@ CREATE TABLE IF NOT EXISTS ragas_evaluation_run (
     avg_context_recall      NUMERIC(4, 3),
     avg_faithfulness        NUMERIC(4, 3),
     avg_answer_relevancy    NUMERIC(4, 3),
+    avg_factual_correctness     NUMERIC(4, 3),
+    avg_reference_faithfulness  NUMERIC(4, 3),
 
     started_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     finished_at             TIMESTAMPTZ,
@@ -33,11 +36,17 @@ CREATE TABLE IF NOT EXISTS ragas_evaluation_run (
         CHECK (repeat_no >= 1),
 
     CONSTRAINT chk_ragas_run_status
-        CHECK (status IN ('RUNNING', 'SUCCEEDED', 'FAILED'))
+        CHECK (status IN ('RUNNING', 'SUCCEEDED', 'FAILED')),
+
+    CONSTRAINT chk_ragas_run_mode
+        CHECK (mode IN ('rag', 'baseline', 'offline'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_ragas_run_started
     ON ragas_evaluation_run (started_at);
+
+CREATE INDEX IF NOT EXISTS idx_ragas_run_mode
+    ON ragas_evaluation_run (mode, dataset_version);
 
 CREATE TABLE IF NOT EXISTS ragas_evaluation_samples (
     id                  BIGSERIAL PRIMARY KEY,
@@ -54,6 +63,8 @@ CREATE TABLE IF NOT EXISTS ragas_evaluation_samples (
     context_recall      NUMERIC(4, 3),
     faithfulness        NUMERIC(4, 3),
     answer_relevancy    NUMERIC(4, 3),
+    factual_correctness     NUMERIC(4, 3),
+    reference_faithfulness  NUMERIC(4, 3),
 
     latency_ms          INTEGER,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -77,7 +88,13 @@ CREATE TABLE IF NOT EXISTS ragas_evaluation_samples (
         CHECK (faithfulness IS NULL OR faithfulness BETWEEN 0 AND 1),
 
     CONSTRAINT chk_ragas_samples_answer_relevancy
-        CHECK (answer_relevancy IS NULL OR answer_relevancy BETWEEN 0 AND 1)
+        CHECK (answer_relevancy IS NULL OR answer_relevancy BETWEEN 0 AND 1),
+
+    CONSTRAINT chk_ragas_samples_factual_correctness
+        CHECK (factual_correctness IS NULL OR factual_correctness BETWEEN 0 AND 1),
+
+    CONSTRAINT chk_ragas_samples_reference_faithfulness
+        CHECK (reference_faithfulness IS NULL OR reference_faithfulness BETWEEN 0 AND 1)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ragas_samples_run

@@ -6,7 +6,8 @@
 - 범위: 단일 정책 질문
 - 데이터셋: DB `policy` → `TestsetGenerator` → 검수 → `golden_vN.jsonl` (git 고정)
 - 평가: K8s Job → 질문 INSERT → RAG 응답·점수 UPDATE
-- 지표: Context Precision, Context Recall, Faithfulness, Answer Relevancy
+- 지표: Context Precision, Context Recall, Faithfulness, Answer Relevancy + 할루시네이션 비교용 Factual Correctness, Reference Faithfulness
+- 모드: `rag` (기본), `baseline` (RAG 없이 LLM 직접 호출, 할루시네이션 기준선), `offline` (채점 경로 검증)
 
 ## 역할 분담
 
@@ -92,6 +93,17 @@
 | Context Recall | `ContextRecall` | `user_input`, `retrieved_contexts`, `reference` | LLM |
 | Faithfulness | `Faithfulness` | `user_input`, `retrieved_contexts`, `response` | LLM |
 | Answer Relevancy | `AnswerRelevancy` | `user_input`, `response` | LLM + 임베딩 |
+| Factual Correctness | `FactualCorrectness` | `response`, `reference` | LLM |
+| Reference Faithfulness | `Faithfulness` | `user_input`, `response`, `retrieved_contexts` ← `reference_contexts` | LLM |
+
+- Factual Correctness: 답변 주장 vs `ground_truth` 주장 대조 (틀린 정보)
+- Reference Faithfulness: 검색 결과 대신 정책 원문(`reference_contexts`) 기준 충실도 (지어낸 정보)
+- 두 지표는 검색 여부와 무관해 `rag`·`baseline` 공통 비교 기준
+
+| 지표 | `rag` | `baseline` | `offline` |
+| --- | --- | --- | --- |
+| Context Precision, Context Recall, Faithfulness | O | NULL (검색 없음, `errors` 미기록) | O |
+| Answer Relevancy, Factual Correctness, Reference Faithfulness | O | O | O |
 
 | 항목 | 값 |
 | --- | --- |
@@ -106,8 +118,10 @@
 | 1 | `ragas_evaluation_run` | INSERT | `run_id`, `dataset_version`, `repeat_no`, 모델 정보, `status = 'RUNNING'` |
 | 2 | `ragas_evaluation_samples` | INSERT (`reviewed = true`) | `sample_id`, `policy_no`, `question`, `ground_truth` |
 | 3 | `ragas_evaluation_samples` | UPDATE (RAG 응답) | `answer`, `contexts`, `latency_ms`, `metadata.tokens` |
-| 4 | `ragas_evaluation_samples` | UPDATE (채점) | 지표 4개, `metadata.errors` |
+| 4 | `ragas_evaluation_samples` | UPDATE (채점) | 모드별 지표 (최대 6개), `metadata.errors` |
 | 5 | `ragas_evaluation_run` | UPDATE (집계) | `avg_*`, `sample_count`, `finished_at`, `status` |
+
+- 3단계 응답 출처: `rag` → RAG 호출, `baseline` → LLM 직접 호출, `offline` → `ground_truth`
 
 - `--repeat 3` → 1~5를 3회 (run 3행)
 - 이전 run 덮어쓰기 없음
@@ -134,9 +148,26 @@
 | `answer` | `ground_truth` |
 | `contexts` | `reference_contexts` → `[{"content": c} for c in reference_contexts]` |
 | `latency_ms` | NULL |
-| run 기록 | `rag_chat_model`·`rag_retriever`·`rag_top_k` NULL, `metadata.mode = "offline"` |
-| 기대 결과 | 지표 4개 1에 근접. 크게 낮으면 채점·매핑 오류 |
+| run 기록 | `mode = 'offline'`, `rag_chat_model`·`rag_retriever`·`rag_top_k` NULL |
+| 기대 결과 | 지표 6개 1에 근접. 크게 낮으면 채점·매핑 오류 |
 | 비용 | 채점 LLM 호출 발생 (사용자 확인 후 실행) |
+
+## 베이스라인 모드 (`run --baseline`)
+
+| 항목 | 값 |
+| --- | --- |
+| 목적 | RAG 도입 전후 할루시네이션 비교 (같은 질문, 같은 LLM, 검색 유무만 다름) |
+| RAG 호출 | 없음 (RAG 서버 미구현 상태에서도 실행 가능) |
+| `answer` | `BASELINE_MODEL`에 질문만 전달한 응답 (`AsyncOpenAI` 직접 호출) |
+| `BASELINE_MODEL` | RAG `chat_model`과 같은 모델 (공정 비교) |
+| 프롬프트 | RAG 생성 프롬프트(`generate_v1.md`)에서 컨텍스트만 뺀 문구. RAG 프롬프트 확정 전에는 임시 문구 |
+| `contexts` | `[]` |
+| `latency_ms`, `metadata.tokens` | OpenAI 응답 기준 기록 |
+| run 기록 | `mode = 'baseline'`, `rag_chat_model = BASELINE_MODEL`, `rag_retriever = 'none'`, `rag_top_k` NULL, `metadata.prompt_version` |
+| 비교 | 같은 `dataset_version`의 `rag` run과 `avg_factual_correctness`, `avg_reference_faithfulness`, `avg_answer_relevancy` 비교 |
+| 기대 결과 | `baseline` < `rag` (차이 = RAG의 할루시네이션 감소 효과) |
+| 비용 | 답변 LLM + 채점 LLM 호출 발생 (사용자 확인 후 실행) |
+| 제약 | `--offline`과 함께 쓸 수 없음 |
 
 ## DB 추가 테이블 (`db/ragas_schema.sql`)
 
@@ -147,6 +178,7 @@
 | run_id | UUID | NOT NULL | gen_random_uuid() | PK |
 | dataset_version | VARCHAR(50) | NOT NULL | | |
 | repeat_no | INTEGER | NOT NULL | 1 | CHECK >= 1 |
+| mode | VARCHAR(20) | NOT NULL | 'rag' | CHECK IN ('rag', 'baseline', 'offline') |
 | rag_chat_model | VARCHAR(100) | NULL | | |
 | rag_retriever | VARCHAR(50) | NULL | | |
 | rag_top_k | INTEGER | NULL | | |
@@ -158,6 +190,8 @@
 | avg_context_recall | NUMERIC(4,3) | NULL | | |
 | avg_faithfulness | NUMERIC(4,3) | NULL | | |
 | avg_answer_relevancy | NUMERIC(4,3) | NULL | | |
+| avg_factual_correctness | NUMERIC(4,3) | NULL | | |
+| avg_reference_faithfulness | NUMERIC(4,3) | NULL | | |
 | started_at | TIMESTAMPTZ | NOT NULL | NOW() | |
 | finished_at | TIMESTAMPTZ | NULL | | |
 | metadata | JSONB | NOT NULL | '{}'::jsonb | |
@@ -178,6 +212,8 @@
 | context_recall | NUMERIC(4,3) | NULL | | CHECK 0 ~ 1 |
 | faithfulness | NUMERIC(4,3) | NULL | | CHECK 0 ~ 1 |
 | answer_relevancy | NUMERIC(4,3) | NULL | | CHECK 0 ~ 1 |
+| factual_correctness | NUMERIC(4,3) | NULL | | CHECK 0 ~ 1 |
+| reference_faithfulness | NUMERIC(4,3) | NULL | | CHECK 0 ~ 1 |
 | latency_ms | INTEGER | NULL | | |
 | created_at | TIMESTAMPTZ | NOT NULL | NOW() | |
 | metadata | JSONB | NOT NULL | '{}'::jsonb | |
@@ -185,6 +221,7 @@
 | 인덱스 | 테이블 | 컬럼 |
 | --- | --- | --- |
 | idx_ragas_run_started | ragas_evaluation_run | started_at |
+| idx_ragas_run_mode | ragas_evaluation_run | mode, dataset_version |
 | idx_ragas_samples_run | ragas_evaluation_samples | run_id |
 | idx_ragas_samples_policy | ragas_evaluation_samples | policy_no |
 
@@ -198,6 +235,8 @@
 | `contexts`에 `trace.chunks` 원본 | 검색 순위·점수 재분석 |
 | 지표 CHECK 0 ~ 1, NULL 허용 | 채점 실패와 0점 구분 |
 | `latency_ms` 추가 | 응답 속도 집계 |
+| `mode` 컬럼 (`metadata.mode` 대신) | `rag`·`baseline` run 필터·비교 |
+| `factual_correctness`, `reference_faithfulness` 추가 | 검색 없는 `baseline`과 공통 비교 지표 |
 
 ## 코드 구조 (`rag_ragas_evaluation/`)
 
@@ -205,14 +244,15 @@
 | --- | --- |
 | `ragas_eval/__main__.py` | 진입점 |
 | `ragas_eval/cli.py` | `generate`, `run` |
-| `ragas_eval/config.py` | `DATABASE_URL`, `OPENAI_API_KEY`, `RAG_BASE_URL`, `GEN_MODEL`, `JUDGE_MODEL` |
+| `ragas_eval/config.py` | `DATABASE_URL`, `OPENAI_API_KEY`, `RAG_BASE_URL`, `GEN_MODEL`, `JUDGE_MODEL`, `BASELINE_MODEL` |
 | `ragas_eval/policy_source/policy_source.py` | `policy` → `Document` |
 | `ragas_eval/generate/generate.py` | `TestsetGenerator` → `policy_no` 복원 → `golden_candidates.jsonl` |
 | `ragas_eval/dataset/dataset.py` | jsonl 로드, `reviewed` 필터, `source_updated_at` 검사, `GoldenSample` 타입 |
 | `ragas_eval/rag_client/rag_client.py` | RAG 호출, `RagResult` 타입 |
-| `ragas_eval/scorer/scorer.py` | 지표 4개 `ascore`, `ScoreResult` 타입 |
+| `ragas_eval/baseline_client/baseline_client.py` | LLM 직접 호출 → `RagResult` (`retrieved_contexts = []`) |
+| `ragas_eval/scorer/scorer.py` | 모드별 지표 `ascore`, `ScoreResult` 타입 |
 | `ragas_eval/repository/repository.py` | run/samples INSERT·UPDATE |
-| `ragas_eval/runner/runner.py` | 실행 순서 1~5, `--repeat`, `--offline` |
+| `ragas_eval/runner/runner.py` | 실행 순서 1~5, `--repeat`, `--offline`, `--baseline` |
 | `db/ragas_schema.sql` | DDL |
 | `datasets/golden_vN.jsonl` | 확정 데이터셋 |
 | `k8s/ragas-eval-job.yaml` | 평가 Job |
@@ -224,6 +264,7 @@
 - `python -m ragas_eval generate --testset-size 100 --out datasets/golden_candidates.jsonl`
 - `python -m ragas_eval run --golden datasets/golden_v1.jsonl --repeat 3`
 - `python -m ragas_eval run --golden datasets/golden_v1.jsonl --offline`
+- `python -m ragas_eval run --golden datasets/golden_v1.jsonl --baseline --repeat 3`
 
 ## 실행 환경
 
@@ -234,7 +275,7 @@
 | `backoffLimit` | 0 |
 | `activeDeadlineSeconds` | 3600 |
 | 시크릿 | `OPENAI_API_KEY`, `DATABASE_URL` |
-| 의존 | RAG Service (`RAG_BASE_URL`) |
+| 의존 | RAG Service (`RAG_BASE_URL`, `rag` 모드만) |
 | 동시성 | `asyncio.Semaphore(5)` |
 
 ## 선행 작업
@@ -251,15 +292,15 @@
 | 단계 | 작업 | 방식 | 선행 |
 | --- | --- | --- | --- |
 | 1. 기반 | `pytest.ini`, `conftest.py`, 공유 타입 | 순차 | - |
-| 2. 독립 모듈 | `policy_source`, `dataset`, `rag_client`, `scorer`, `repository` | 병렬 5 | 1 |
-| 3. 조합 모듈 | `generate`, `runner` | 병렬 2 | `generate` ← `policy_source`, `dataset` / `runner` ← `dataset`, `rag_client`, `scorer`, `repository` |
+| 2. 독립 모듈 | `policy_source`, `dataset`, `rag_client`, `baseline_client`, `scorer`, `repository` | 병렬 6 | 1 |
+| 3. 조합 모듈 | `generate`, `runner` | 병렬 2 | `generate` ← `policy_source`, `dataset` / `runner` ← `dataset`, `rag_client`, `baseline_client`, `scorer`, `repository` |
 | 4. 배포 | `Dockerfile`, `k8s/ragas-eval-job.yaml` | 순차 | 3 |
 
 | 공유 타입 | 위치 | 사용처 |
 | --- | --- | --- |
 | `GoldenSample` | `dataset/dataset.py` | `generate`, `runner` |
-| `RagResult` (`answer`, `retrieved_contexts`, `chunks`, `latency_ms`, `tokens`, `chat_model`, `retriever`, `top_k`) | `rag_client/rag_client.py` | `runner` |
-| `ScoreResult` (지표 4개, `errors`) | `scorer/scorer.py` | `runner`, `repository` |
+| `RagResult` (`answer`, `retrieved_contexts`, `chunks`, `latency_ms`, `tokens`, `chat_model`, `retriever`, `top_k`) | `rag_client/rag_client.py` | `baseline_client`, `runner` |
+| `ScoreResult` (지표 6개, `errors`) | `scorer/scorer.py` | `runner`, `repository` |
 
 ## 구현 체크리스트
 
@@ -270,9 +311,11 @@
 - [x] 2-2. `dataset` + 테스트
 - [x] 2-3. `rag_client` + 테스트 (`httpx.MockTransport`)
 - [x] 2-4. `scorer` + 테스트 (`AsyncMock`, NaN → NULL)
-- [ ] 2-5. `repository` + 테스트 (mock, `db` 마커 통합)
+- [ ] 2-5. `repository` + 테스트 (mock, `db` 마커 통합, `mode`·지표 6개)
+- [ ] 2-6. `scorer` 지표 6개 확장 + 모드별 적용 지표
+- [ ] 2-7. `baseline_client` + 테스트 (`AsyncMock` OpenAI)
 - [ ] 3-1. `generate` + 테스트
-- [ ] 3-2. `runner` + 테스트 (`--repeat`, `--offline`, 재개, 실패 시 `FAILED`)
+- [ ] 3-2. `runner` + 테스트 (`--repeat`, `--offline`, `--baseline`, 재개, 실패 시 `FAILED`)
 - [ ] 4-1. `Dockerfile` (Python 3.12, `datasets/` 포함)
 - [ ] 4-2. `k8s/ragas-eval-job.yaml`
 
@@ -282,8 +325,10 @@
 - [ ] 2. `policy` → `Document` → `TestsetGenerator`로 `question`, `ground_truth` 생성
 - [ ] 3. 검수 → `golden_v1.jsonl` 고정
 - [ ] 4. `run --offline`으로 채점 경로 검증
+- [ ] 4-1. `run --baseline --repeat 3`으로 할루시네이션 기준선 기록
 - [ ] 5. run INSERT, 질문 samples INSERT
 - [ ] 6. RAG 호출 → `answer`, `contexts` UPDATE
 - [ ] 7. 채점 → 지표 4개 UPDATE
 - [ ] 8. 집계 → run UPDATE
 - [ ] 9. 3회 반복 → 평균·노이즈 폭 기록
+- [ ] 10. `baseline` vs `rag` 비교 (Factual Correctness, Reference Faithfulness, Answer Relevancy)
