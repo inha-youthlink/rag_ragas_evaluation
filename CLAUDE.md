@@ -3,7 +3,6 @@
 YouthLink RAG를 RAGAS로 평가하는 저장소다. 서비스 DB의 `policy`로 데이터셋을 만들고,
 배포된 RAG를 호출해 4개 지표로 채점한 뒤 결과를 서비스 DB의 평가 테이블에 저장한다.
 설계 기준은 `docs/RAGAS_PRD.md`이며, 이 문서는 상시 규칙만 정의한다.
-작업은 PRD(요구사항·설계) → 코드·테스트 → 검증 순서로 진행한다. PRD에 없는 결정은 PRD를 먼저 갱신한다.
 
 ## 기술과 구조
 
@@ -51,7 +50,6 @@ YouthLink RAG를 RAGAS로 평가하는 저장소다. 서비스 DB의 `policy`로
 - Python 3.14 venv 생성, `langchain-community` 0.4 이상으로 업그레이드
 - `DROP`, `TRUNCATE`, 평가 테이블 전체 `DELETE`
 - `git push --force`, `git reset --hard`, `git clean`
-- `참고용클로드엠디_이건커밋금지.md` 커밋
 - 요청받지 않은 리팩터링, 의존성 추가
 
 ## 검증과 완료 보고
