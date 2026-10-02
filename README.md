@@ -1,4 +1,4 @@
-# rag-eval
+# rag_ragas_evaluation
 
 YouthLink RAG를 RAGAS로 평가합니다. 상세 계획은 `docs/RAGAS_PRD.md`, DB 스키마는 `docs/Schema.md`를 참고합니다.
 
