@@ -1,7 +1,20 @@
 # golden jsonl 로드, reviewed 필터, source_updated_at 변경 검사
+import logging
+from collections.abc import Iterable, Mapping
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+import psycopg
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
+
+logger = logging.getLogger(__name__)
+
+SELECT_SOURCE_UPDATED_AT = """
+    SELECT policy_no, source_updated_at
+    FROM policy
+    WHERE policy_no = ANY(%(policy_nos)s)
+"""
 
 
 class GoldenSample(BaseModel):
@@ -18,3 +31,62 @@ class GoldenSample(BaseModel):
     profile: dict[str, Any] = Field(default_factory=dict)
     source_updated_at: AwareDatetime | None
     reviewed: bool = False
+
+
+def load_golden(path: str | Path) -> list[GoldenSample]:
+    samples: list[GoldenSample] = []
+    seen: set[str] = set()
+    # utf-8-sig: 편집기가 붙인 BOM 허용, split("\n"): 본문 속 U+2028 등에서 레코드가 쪼개지지 않게
+    for line_no, line in enumerate(Path(path).read_text(encoding="utf-8-sig").split("\n"), start=1):
+        if not line.strip():
+            continue
+        try:
+            sample = GoldenSample.model_validate_json(line)
+        except ValidationError as e:
+            # 원문(input_value)이 traceback에 남지 않도록 위치·종류만 남기고 체인을 끊는다
+            details = ", ".join(
+                f"{'.'.join(map(str, err['loc'])) or '(줄 전체)'}:{err['type']}" for err in e.errors(include_input=False)
+            )
+            raise ValueError(f"{path} {line_no}번째 줄 검증 실패: {details}") from None
+        if sample.sample_id in seen:
+            raise ValueError(f"{path} {line_no}번째 줄 sample_id 중복: {sample.sample_id}")
+        seen.add(sample.sample_id)
+        samples.append(sample)
+    return samples
+
+
+def reviewed_only(samples: Iterable[GoldenSample]) -> list[GoldenSample]:
+    return [s for s in samples if s.reviewed]
+
+
+def fetch_source_updated_at(conn: psycopg.Connection, policy_nos: Iterable[str]) -> dict[str, datetime | None]:
+    policy_nos = list(policy_nos)
+    if not policy_nos:
+        return {}
+    with conn.cursor() as cur:
+        cur.execute(SELECT_SOURCE_UPDATED_AT, {"policy_nos": policy_nos})
+        return {policy_no: updated_at for policy_no, updated_at in cur.fetchall()}
+
+
+def split_by_freshness(
+    samples: Iterable[GoldenSample], current: Mapping[str, datetime | None]
+) -> tuple[list[GoldenSample], list[GoldenSample]]:
+    """DB에 정책이 없거나 source_updated_at이 다르면 stale로 분류한다."""
+    fresh: list[GoldenSample] = []
+    stale: list[GoldenSample] = []
+    for sample in samples:
+        is_fresh = sample.policy_no in current and current[sample.policy_no] == sample.source_updated_at
+        (fresh if is_fresh else stale).append(sample)
+    return fresh, stale
+
+
+def load_evaluation_samples(path: str | Path, conn: psycopg.Connection) -> list[GoldenSample]:
+    samples = reviewed_only(load_golden(path))
+    current = fetch_source_updated_at(conn, {s.policy_no for s in samples})
+    fresh, stale = split_by_freshness(samples, current)
+    for sample in stale:
+        reason = "변경으로" if sample.policy_no in current else "삭제로"
+        logger.warning("정책 %s 샘플 제외: sample_id=%s policy_no=%s", reason, sample.sample_id, sample.policy_no)
+    if stale:
+        logger.warning("제외 샘플 %d건 / 전체 %d건", len(stale), len(samples))
+    return fresh
