@@ -1,13 +1,12 @@
 # rag_ragas_evaluation
 
-YouthLink RAG를 RAGAS로 평가하는 1인 저장소다. 서비스 DB의 `policy`로 데이터셋을 만들고,
+YouthLink RAG를 RAGAS로 평가하는 저장소다. 서비스 DB의 `policy`로 데이터셋을 만들고,
 배포된 RAG를 호출해 4개 지표로 채점한 뒤 결과를 서비스 DB의 평가 테이블에 저장한다.
 설계 기준은 `docs/RAGAS_PRD.md`이며, 이 문서는 상시 규칙만 정의한다.
 
 ## 기술과 구조
 
 - Python 3.12, `ragas` 0.4.x, `langchain-core` 1.x, `langchain-community<0.4`, `psycopg` 3, `httpx`, `pydantic-settings`, `pytest`
-- Python 3.14는 쓰지 않는다 (`scikit-network` Windows wheel 없음).
 - 지표는 v0.4 API(`ragas.metrics.collections`, `await metric.ascore(...)`)를 쓴다.
 - 패키지는 `ragas_eval/`, 진입점은 `python -m ragas_eval {generate|run}`이다.
 - 모듈 역할은 고정한다.
