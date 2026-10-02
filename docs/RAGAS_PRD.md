@@ -245,7 +245,6 @@
 | 파이프라인 구현 (`runner`, `retrieval/vector`, `generator`) | `YouthLink_RAG` | 이도경 |
 | `/internal/pipeline` + `debug` trace | `YouthLink_RAG/app/api/internal.py` | 이도경 |
 | `load_policies.py` `__main__` 들여쓰기 수정 | `youthlink-data-pipeline` | 홍용준 |
-| 평가 실행 주체 결정 | - | 팀 |
 
 ## 구현 계획
 
