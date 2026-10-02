@@ -14,20 +14,20 @@
 | --- | --- | --- | --- |
 | ETL | 홍용준 | 온통청년 API → `policy` UPSERT | 쓰기 |
 | 데이터셋 | 박용우 | `policy` → 생성 → 검수 → `golden_vN.jsonl` | 읽기 `policy` |
-| 평가 실행 | 미정 (박용우 / 이도경) | Job 실행 → 결과 저장 | 쓰기 `ragas_evaluation_*` |
+| 평가 실행 | 박용우 | Job 실행 → 결과 저장 | 쓰기 `ragas_evaluation_*` |
 | RAG | 이도경 | 개선 → 배포 → 평가 요청 | 읽기 `policy_chunk` |
 | `policy_chunk` 적재 | 홍용준 | 청킹·임베딩 → `policy_chunk` | 쓰기 |
 
 ## 전체 흐름
 
-| 단계 | 주체 | 빈도 | 입력 → 출력 |
-| --- | --- | --- | --- |
-| 1. 정책 적재 | 홍용준 | 수시 | API → `policy` |
-| 2. 데이터셋 생성 | 박용우 (로컬) | 최초 1회, 버전업 시 | `policy` → `golden_candidates.jsonl` |
-| 3. 검수·고정 | 박용우 | 2 직후 | → `golden_vN.jsonl` (git) |
-| 4. RAG 개선·배포 | 이도경 | 개선 시마다 | → RAG 서버 (dev) |
-| 5. 평가 실행 | K8s Job | 요청 시 | `golden_vN.jsonl` + RAG 응답 → 점수 |
-| 6. 결과 확인 | 이도경 | 5 직후 | `ragas_evaluation_run`, `ragas_evaluation_samples` |
+| 단계 | 주체          | 빈도 | 입력 → 출력 |
+| --- |-------------| --- | --- |
+| 1. 정책 적재 | 홍용준         | 수시 | API → `policy` |
+| 2. 데이터셋 생성 | 박용우 (로컬)    | 최초 1회, 버전업 시 | `policy` → `golden_candidates.jsonl` |
+| 3. 검수·고정 | 박용우 (로컬 검수) | 2 직후 | → `golden_vN.jsonl` (git) |
+| 4. RAG 개선·배포 | 이도경         | 개선 시마다 | → RAG 서버 (dev) |
+| 5. 평가 실행 | K8s Job     | 요청 시 | `golden_vN.jsonl` + RAG 응답 → 점수 |
+| 6. 결과 확인 | 이도경         | 5 직후 | `ragas_evaluation_run`, `ragas_evaluation_samples` |
 
 ## 의존 관계
 
