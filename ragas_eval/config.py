@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     gen_model: str
     judge_model: str
     embedding_model: str = "text-embedding-3-small"
+    # run --baseline에서만 사용. RAG chat_model과 같은 모델로 둬야 공정 비교가 된다
+    baseline_model: str | None = None
 
 
 @lru_cache
