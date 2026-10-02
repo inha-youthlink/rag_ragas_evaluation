@@ -9,6 +9,22 @@
 - 지표: Context Precision, Context Recall, Faithfulness, Answer Relevancy + 할루시네이션 비교용 Factual Correctness, Reference Faithfulness
 - 모드: `rag` (기본), `baseline` (RAG 없이 LLM 직접 호출, 할루시네이션 기준선), `offline` (채점 경로 검증)
 
+## 실행 모드
+
+| 항목 | `rag` | `baseline` | `offline` |
+| --- | --- | --- | --- |
+| 명령 | `run` | `run --baseline` | `run --offline` |
+| `answer` | RAG 응답 | LLM 직접 응답 | `ground_truth` |
+| `contexts` | RAG 검색 결과 | `[]` | `reference_contexts` |
+| 답변 호출 | RAG 서버 | OpenAI | 없음 |
+| 채점 LLM 호출 | 있음 | 있음 | 있음 |
+| 목적 | RAG 성능 측정 | RAG 도입 효과(할루시네이션 감소) 비교 | 평가 코드 검증 |
+| 기대 결과 | - | `rag`보다 낮음 | 지표 1에 근접 |
+
+- `offline`: 정답을 답변으로 넣어 채점 → 1에 근접하면 데이터셋 로드·채점·DB 저장 경로 정상, 크게 낮으면 우리 코드 오류
+- 실행 순서: `offline`으로 평가 코드 검증 → `baseline`·`rag` 점수 신뢰
+- 상세: "베이스라인 모드", "오프라인 모드", "RAG 연동 계약" 섹션
+
 ## 역할 분담
 
 | 역할 | 담당 | 작업 | DB |
