@@ -328,7 +328,7 @@
 - [x] 2-3. `rag_client` + 테스트 (`httpx.MockTransport`)
 - [x] 2-4. `scorer` + 테스트 (`AsyncMock`, NaN → NULL)
 - [ ] 2-5. `repository` + 테스트 (mock, `db` 마커 통합, `mode`·지표 6개)
-- [ ] 2-6. `scorer` 지표 6개 확장 + 모드별 적용 지표
+- [x] 2-6. `scorer` 지표 6개 확장 + 모드별 적용 지표
 - [ ] 2-7. `baseline_client` + 테스트 (`AsyncMock` OpenAI)
 - [ ] 3-1. `generate` + 테스트
 - [ ] 3-2. `runner` + 테스트 (`--repeat`, `--offline`, `--baseline`, 재개, 실패 시 `FAILED`)
@@ -344,7 +344,7 @@
 - [ ] 4-1. `run --baseline --repeat 3`으로 할루시네이션 기준선 기록
 - [ ] 5. run INSERT, 질문 samples INSERT
 - [ ] 6. RAG 호출 → `answer`, `contexts` UPDATE
-- [ ] 7. 채점 → 지표 4개 UPDATE
+- [ ] 7. 채점 → 모드별 지표 UPDATE
 - [ ] 8. 집계 → run UPDATE
 - [ ] 9. 3회 반복 → 평균·노이즈 폭 기록
 - [ ] 10. `baseline` vs `rag` 비교 (Factual Correctness, Reference Faithfulness, Answer Relevancy)

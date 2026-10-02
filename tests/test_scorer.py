@@ -1,4 +1,4 @@
-# ScoreResult 타입 검증과 지표 4개 채점 테스트 (지표는 AsyncMock, 실제 LLM 호출 없음)
+# ScoreResult 타입 검증과 모드별 지표 6개 채점 테스트 (지표는 AsyncMock, 실제 LLM 호출 없음)
 import asyncio
 import logging
 from types import SimpleNamespace
@@ -9,23 +9,42 @@ from openai import AsyncOpenAI
 from pydantic import ValidationError
 
 from ragas_eval.scorer import scorer
-from ragas_eval.scorer.scorer import METRIC_NAMES, ScoreResult, build_metrics, score_sample
+from ragas_eval.scorer.scorer import METRIC_NAMES, MODES, ScoreResult, build_metrics, score_sample
 
 QUESTION = "가짜 질문"
 ANSWER = "가짜 답변"
 CONTEXTS = ["근거 1", "근거 2"]
 REFERENCE = "가짜 정답"
+REFERENCE_CONTEXTS = ["정책 원문 1"]
+RETRIEVAL_METRICS = ("context_precision", "context_recall", "faithfulness")
 
 
-def test_score_result_keeps_four_metrics():
-    result = ScoreResult(context_precision=0.9, context_recall=1.0, faithfulness=0.0, answer_relevancy=0.75)
+def test_score_result_keeps_six_metrics():
+    result = ScoreResult(
+        context_precision=0.9,
+        context_recall=1.0,
+        faithfulness=0.0,
+        answer_relevancy=0.75,
+        factual_correctness=0.6,
+        reference_faithfulness=0.4,
+    )
 
     assert result.model_dump(exclude={"errors"}) == {
         "context_precision": 0.9,
         "context_recall": 1.0,
         "faithfulness": 0.0,
         "answer_relevancy": 0.75,
+        "factual_correctness": 0.6,
+        "reference_faithfulness": 0.4,
     }
+
+
+def test_score_result_fields_match_metric_names():
+    assert set(ScoreResult.model_fields) - {"errors"} == set(METRIC_NAMES)
+
+
+def test_modes_match_db_check_values():
+    assert MODES == ("rag", "baseline", "offline")
 
 
 def test_failed_metric_is_none_with_error():
@@ -56,9 +75,17 @@ def fake_metrics(**values):
     return metrics
 
 
-def score(metrics):
+def score(metrics, mode="rag", retrieved_contexts=CONTEXTS):
     return asyncio.run(
-        score_sample(metrics, question=QUESTION, answer=ANSWER, retrieved_contexts=CONTEXTS, reference=REFERENCE)
+        score_sample(
+            metrics,
+            question=QUESTION,
+            answer=ANSWER,
+            retrieved_contexts=retrieved_contexts,
+            reference=REFERENCE,
+            reference_contexts=REFERENCE_CONTEXTS,
+            mode=mode,
+        )
     )
 
 
@@ -77,14 +104,66 @@ def test_each_metric_receives_its_inputs():
         user_input=QUESTION, response=ANSWER, retrieved_contexts=CONTEXTS
     )
     metrics["answer_relevancy"].ascore.assert_awaited_once_with(user_input=QUESTION, response=ANSWER)
+    metrics["factual_correctness"].ascore.assert_awaited_once_with(response=ANSWER, reference=REFERENCE)
+    metrics["reference_faithfulness"].ascore.assert_awaited_once_with(
+        user_input=QUESTION, response=ANSWER, retrieved_contexts=REFERENCE_CONTEXTS
+    )
 
 
 def test_metric_values_map_to_score_result():
-    metrics = fake_metrics(context_precision=0.9, context_recall=1, faithfulness=0.0, answer_relevancy=0.75)
+    metrics = fake_metrics(
+        context_precision=0.9,
+        context_recall=1,
+        faithfulness=0.0,
+        answer_relevancy=0.75,
+        factual_correctness=0.6,
+        reference_faithfulness=0.4,
+    )
 
     result = score(metrics)
 
-    assert result == ScoreResult(context_precision=0.9, context_recall=1.0, faithfulness=0.0, answer_relevancy=0.75)
+    assert result == ScoreResult(
+        context_precision=0.9,
+        context_recall=1.0,
+        faithfulness=0.0,
+        answer_relevancy=0.75,
+        factual_correctness=0.6,
+        reference_faithfulness=0.4,
+    )
+
+
+def test_baseline_skips_retrieval_metrics_without_errors():
+    metrics = fake_metrics()
+
+    result = score(metrics, mode="baseline", retrieved_contexts=[])
+
+    for name in RETRIEVAL_METRICS:
+        metrics[name].ascore.assert_not_awaited()
+        assert getattr(result, name) is None
+    assert (result.answer_relevancy, result.factual_correctness, result.reference_faithfulness) == (0.5, 0.5, 0.5)
+    assert result.errors == {}
+
+
+def test_baseline_does_not_need_retrieval_metric_objects():
+    metrics = {name: m for name, m in fake_metrics().items() if name not in RETRIEVAL_METRICS}
+
+    result = score(metrics, mode="baseline", retrieved_contexts=[])
+
+    assert (result.answer_relevancy, result.factual_correctness, result.reference_faithfulness) == (0.5, 0.5, 0.5)
+    assert result.errors == {}
+
+
+def test_offline_scores_all_six_metrics():
+    metrics = fake_metrics()
+
+    result = score(metrics, mode="offline")
+
+    assert result.model_dump(exclude={"errors"}) == dict.fromkeys(METRIC_NAMES, 0.5)
+
+
+def test_unknown_mode_fails():
+    with pytest.raises(ValueError, match="mode"):
+        score(fake_metrics(), mode="unknown")
 
 
 @pytest.mark.parametrize(
@@ -170,7 +249,7 @@ def test_cancellation_is_not_swallowed():
         score(metrics)
 
 
-def test_build_metrics_creates_four_metrics_without_network(monkeypatch):
+def test_build_metrics_creates_six_metrics_without_network(monkeypatch):
     # ragas의 track은 @silent로 예외를 삼키므로 raise 대신 호출 기록으로 확인한다
     posts = []
     monkeypatch.setattr("ragas._analytics.requests.post", lambda *args, **kwargs: posts.append(args))
@@ -186,4 +265,8 @@ def test_build_metrics_creates_four_metrics_without_network(monkeypatch):
         "ContextRecall",
         "Faithfulness",
         "AnswerRelevancy",
+        "FactualCorrectness",
+        "Faithfulness",
     ]
+    assert metrics["reference_faithfulness"] is not metrics["faithfulness"]
+    assert metrics["reference_faithfulness"].name == "reference_faithfulness"
