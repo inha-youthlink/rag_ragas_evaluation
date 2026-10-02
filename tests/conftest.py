@@ -67,6 +67,9 @@ def rag_payload() -> dict:
             "latency_ms": 1200,
             "prompt_tokens": 850,
             "completion_tokens": 40,
+            "chat_model": "test-chat-model",
+            "retriever": "vector",
+            "top_k": 10,
         },
     }
 
