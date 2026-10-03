@@ -72,6 +72,37 @@ python -m ragas_eval run --golden datasets/golden_v1.jsonl --resume <run_id>
 | 8 | `repository/repository.py` | 평균 집계 후 run 종료 (SUCCEEDED/FAILED) | → `run.avg_*`, `status` |
 | — | `runner/runner.py` | 3~8 순서 조율, 반복, 중단된 run 재개 | |
 
+## 결과 확인
+
+채점 결과는 DB에만 저장된다. `run`이 출력한 `run_id`로 조회한다 (내보내기는 `report`로 예정).
+
+```sql
+-- 실행별 성적표
+SELECT run_id, mode, dataset_version, repeat_no, status, sample_count,
+       avg_context_precision, avg_context_recall, avg_faithfulness,
+       avg_answer_relevancy, avg_factual_correctness, avg_reference_faithfulness,
+       rag_chat_model, judge_model, started_at, finished_at
+FROM ragas_evaluation_run
+ORDER BY started_at DESC;
+
+-- baseline vs rag (같은 데이터셋, 반복 평균)
+SELECT mode, COUNT(*) AS runs,
+       ROUND(AVG(avg_factual_correctness), 3)    AS factual_correctness,
+       ROUND(AVG(avg_reference_faithfulness), 3) AS reference_faithfulness,
+       ROUND(AVG(avg_answer_relevancy), 3)       AS answer_relevancy
+FROM ragas_evaluation_run
+WHERE dataset_version = 'golden_v1' AND status = 'SUCCEEDED'
+GROUP BY mode;
+
+-- 한 run에서 점수가 낮은 샘플
+SELECT sample_id, policy_no, question, answer, factual_correctness, reference_faithfulness,
+       metadata->'errors' AS errors
+FROM ragas_evaluation_samples
+WHERE run_id = '<run_id>'
+ORDER BY factual_correctness NULLS FIRST
+LIMIT 20;
+```
+
 ## 테스트
 
 ```bash
