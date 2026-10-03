@@ -193,18 +193,18 @@
 | 비용 | 답변 LLM + 채점 LLM 호출 발생 (사용자 확인 후 실행) |
 | 제약 | `--offline`과 함께 쓸 수 없음 |
 
-## 결과 내보내기 (`report`, 예정)
+## 결과 내보내기 (`report`)
 
 | 항목 | 값 |
 | --- | --- |
 | 목적 | 채점 결과를 노션·디스코드로 공유 |
 | 입력 | `ragas_evaluation_run`, `ragas_evaluation_samples` (읽기만) |
-| 명령 | `python -m ragas_eval report --run <run_id>` |
-| 내용 | 성적표 (모드·모델·샘플 수·`avg_*` 6개), 같은 `dataset_version`의 `baseline` 대비 차이, 점수 낮은 샘플 |
-| 출력 | 마크다운 → 노션 API, 디스코드 웹훅 |
-| 비밀값 | 노션 토큰·웹훅 URL은 `.env` → `Settings` |
+| 명령 | `python -m ragas_eval report --run <run_id> [--out-dir results]` |
+| 내용 | 요약 (상태·시각·샘플 수), 실행 조건 (모델·검색·프롬프트 버전), 지표 평균 6개, 같은 `dataset_version` 완료 run의 모드별 평균과 `rag - baseline` 차이, 미응답·채점 실패 수, `factual_correctness` 낮은 샘플 10건 |
+| 출력 | `results/<dataset_version>_<mode>_r<repeat_no>_<run_id>.md` (같은 run은 덮어씀) |
+| 노션·디스코드 | 추후 요청 시 연동 (토큰·웹훅 URL은 `.env` → `Settings`) |
 | 비용 | LLM 호출 없음 |
-| 현재 조회 | SQL로 직접 조회 (`README.md` 참고 쿼리) |
+| 직접 조회 | SQL (`README.md` 참고 쿼리) |
 
 ## DB 추가 테이블 (`db/ragas_schema.sql`)
 
@@ -290,7 +290,7 @@
 | `ragas_eval/scorer/scorer.py` | 모드별 지표 `ascore`, `ScoreResult` 타입 |
 | `ragas_eval/repository/repository.py` | run/samples INSERT·UPDATE |
 | `ragas_eval/runner/runner.py` | 실행 순서 1~5, `--repeat`, `--offline`, `--baseline`, `--resume` |
-| `ragas_eval/report/report.py` | 결과 조회 → 노션·디스코드 내보내기 (예정) |
+| `ragas_eval/report/report.py` | 결과 조회 → 마크다운 성적표 (`results/`) |
 | `db/ragas_schema.sql` | DDL |
 | `datasets/golden_vN.jsonl` | 확정 데이터셋 |
 | `k8s/ragas-eval-job.yaml` | 평가 Job |
@@ -304,7 +304,7 @@
 - `python -m ragas_eval run --golden datasets/golden_v1.jsonl --offline`
 - `python -m ragas_eval run --golden datasets/golden_v1.jsonl --baseline --repeat 3`
 - `python -m ragas_eval run --golden datasets/golden_v1.jsonl --resume <run_id>`
-- `python -m ragas_eval report --run <run_id>` (예정)
+- `python -m ragas_eval report --run <run_id>`
 
 ## 실행 환경
 
@@ -359,7 +359,8 @@
 - [ ] 4-1. `Dockerfile` (Python 3.12, `datasets/` 포함)
 - [ ] 4-2. `k8s/ragas-eval-job.yaml`
 - [x] 5-1. `report` 패키지 뼈대
-- [ ] 5-2. `report` 구현 + 테스트 (성적표, `baseline` 비교, 노션·디스코드 전송, `report` 서브커맨드)
+- [x] 5-2. `report` 마크다운 성적표 + 테스트 (`results/`, `baseline` 비교, `report` 서브커맨드)
+- [ ] 5-3. 노션·디스코드 전송 (요청 시)
 
 ## 운영 체크리스트
 

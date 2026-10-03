@@ -19,7 +19,7 @@ YouthLink RAG를 RAGAS로 평가하는 저장소다. 서비스 DB의 `policy`로
   - `scorer/`: 채점
   - `repository/`: 평가 테이블 쓰기
   - `runner/`: 실행 순서 조율
-  - `report/`: 결과 조회·내보내기 (노션·디스코드)
+  - `report/`: 결과 조회 → 마크다운 성적표 (`results/`)
 - 데이터셋은 `datasets/golden_vN.jsonl`(git), 평가 결과는 DB `ragas_evaluation_run`, `ragas_evaluation_samples`에 둔다.
 - 평가는 K8s Job으로 실행하고, `generate`는 로컬에서 실행한다.
 

@@ -4,6 +4,7 @@ from uuid import UUID
 import pytest
 
 from ragas_eval.generate import generate
+from ragas_eval.report import report
 from ragas_eval.runner import runner
 from ragas_eval.runner.runner import RunOutcome
 from ragas_eval.cli import build_parser, main
@@ -101,3 +102,29 @@ def test_main_prints_generate_counts(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert calls == [{"testset_size": 10, "out_path": "datasets/candidates.jsonl"}]
     assert "3건" in out and "1건" in out and "datasets/candidates.jsonl" in out
+
+
+def test_report_parses_run_id_and_default_out_dir():
+    args = build_parser().parse_args(["report", "--run", str(UUID(int=7))])
+
+    assert (args.run, args.out_dir) == (UUID(int=7), "results")
+
+
+def test_report_rejects_invalid_run_id():
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["report", "--run", "not-a-uuid"])
+
+
+def test_main_writes_report_and_prints_path(monkeypatch, capsys):
+    calls = []
+
+    def fake_report(run_id, out_dir):
+        calls.append((run_id, out_dir))
+        return f"{out_dir}/golden_v1_rag_r1_{run_id}.md"
+
+    monkeypatch.setattr(report, "report", fake_report)
+
+    main(["report", "--run", str(UUID(int=7)), "--out-dir", "out"])
+
+    assert calls == [(UUID(int=7), "out")]
+    assert f"out/golden_v1_rag_r1_{UUID(int=7)}.md" in capsys.readouterr().out

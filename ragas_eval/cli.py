@@ -1,8 +1,10 @@
 # generate, run 서브커맨드를 정의하는 CLI
 import argparse
 from collections.abc import Sequence
+from uuid import UUID
 
 from ragas_eval.generate import generate
+from ragas_eval.report import report
 from ragas_eval.runner import runner
 
 
@@ -21,6 +23,10 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--offline", action="store_true", help="RAG 대신 ground_truth·reference_contexts로 채점 경로 검증")
     mode.add_argument("--baseline", action="store_true", help="RAG 없이 BASELINE_MODEL에 직접 질문 (할루시네이션 기준선)")
     run_parser.add_argument("--resume", metavar="RUN_ID", help="RUNNING으로 남은 run의 미완료 샘플만 이어서 실행")
+
+    report_parser = sub.add_parser("report", help="run 결과를 마크다운 성적표로 저장")
+    report_parser.add_argument("--run", required=True, type=UUID, metavar="RUN_ID")
+    report_parser.add_argument("--out-dir", default=report.DEFAULT_OUT_DIR)
 
     return parser
 
@@ -44,3 +50,6 @@ def main(argv: Sequence[str] | None = None) -> None:
         # 미완료 run이 있으면 Job이 실패로 보이게 해 --resume이 필요함을 드러낸다
         if any(o.status != "SUCCEEDED" for o in outcomes):
             raise SystemExit(1)
+    elif args.command == "report":
+        path = report.report(args.run, out_dir=args.out_dir)
+        print(f"성적표 저장: {path}")

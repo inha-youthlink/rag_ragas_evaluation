@@ -74,7 +74,12 @@ python -m ragas_eval run --golden datasets/golden_v1.jsonl --resume <run_id>
 
 ## 결과 확인
 
-채점 결과는 DB에만 저장된다. `run`이 출력한 `run_id`로 조회한다 (내보내기는 `report`로 예정).
+채점 결과는 DB에 저장된다. `run`이 출력한 `run_id`로 마크다운 성적표를 만들거나 SQL로 직접 조회한다.
+
+```bash
+# results/<dataset_version>_<mode>_r<repeat_no>_<run_id>.md 생성 (LLM 비용 없음)
+python -m ragas_eval report --run <run_id>
+```
 
 ```sql
 -- 실행별 성적표
