@@ -1,4 +1,5 @@
 # 생성 결과 → policy_no 매칭 → 후보 jsonl 변환·저장 테스트 (TestsetGenerator·DB는 대체, 실제 LLM 호출 없음)
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -171,3 +172,48 @@ def test_generate_keeps_existing_file_when_all_rows_dropped(tmp_path, monkeypatc
     with pytest.raises(ValueError, match="모두 제외"):
         generate.generate(testset_size=10, out_path=str(out))
     assert out.read_text(encoding="utf-8") == "검수 중\n"
+
+
+@pytest.fixture
+def stub_openai_url():
+    """임베딩 응답을 돌려주는 로컬 가짜 OpenAI 서버 (keep-alive 연결 유지)."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            body = json.dumps(
+                {
+                    "object": "list",
+                    "data": [{"object": "embedding", "index": 0, "embedding": [0.1]}],
+                    "model": "m",
+                    "usage": {"prompt_tokens": 1, "total_tokens": 1},
+                }
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_address[1]}/v1"
+    server.shutdown()
+
+
+def test_generation_client_survives_new_event_loop_per_step(stub_openai_url):
+    # ragas는 단계마다 asyncio.run으로 새 루프를 연다. 재시도 없이도 닫힌 루프의 연결을 재사용하지 않아야 한다
+    client = generate._generation_client("sk-test").with_options(base_url=stub_openai_url, max_retries=0)
+
+    async def batch():
+        responses = await asyncio.gather(*(client.embeddings.create(input="a", model="m") for _ in range(20)))
+        return len(responses)
+
+    assert [asyncio.run(batch()) for _ in range(5)] == [20] * 5

@@ -10,7 +10,7 @@ from typing import Any, NamedTuple
 
 import psycopg
 from langchain_core.documents import Document
-from openai import AsyncOpenAI
+from openai import DEFAULT_CONNECTION_LIMITS, AsyncOpenAI, DefaultAsyncHttpxClient
 from pydantic import ValidationError
 from ragas.embeddings import OpenAIEmbeddings
 from ragas.testset import TestsetGenerator
@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 
 KST = timezone(timedelta(hours=9))
 LANGUAGE = "korean"
+# ragas는 변환·생성 단계마다 새 이벤트 루프(asyncio.run)를 연다. 이전 루프에 묶인 연결을 재사용하면
+# "Event loop is closed"로 실패하므로(실제 생성에서 발생) 연결을 요청마다 닫는다
+NO_KEEPALIVE_LIMITS = type(DEFAULT_CONNECTION_LIMITS)(
+    max_connections=DEFAULT_CONNECTION_LIMITS.max_connections, max_keepalive_connections=0
+)
 # 확정 데이터셋은 수정하지 않는다(CLAUDE.md). 생성 결과로 덮어쓰지 않도록 막는다
 CONFIRMED_DATASET = re.compile(r"golden_v\d+\.jsonl", re.IGNORECASE)
 
@@ -123,9 +128,7 @@ def _run_generator(documents: Sequence[Document], testset_size: int, settings: S
     api_key = settings.openai_api_key.get_secret_value()
     synthesizer = asyncio.run(_korean_synthesizer(api_key, settings.gen_model))
 
-    # ragas는 변환·생성 단계마다 새 이벤트 루프(asyncio.run)를 열어 이 클라이언트를 여러 루프에서 재사용한다.
-    # 닫힌 루프에 묶인 연결 오류는 SDK 기본 재시도(2회)로 복구된다(스텁 서버로 확인, 실제 OpenAI 미확인)
-    client = AsyncOpenAI(api_key=api_key)
+    client = _generation_client(api_key)
     llm = make_llm(settings.gen_model, client)
     synthesizer.llm = llm
     generator = TestsetGenerator(
@@ -135,6 +138,10 @@ def _run_generator(documents: Sequence[Document], testset_size: int, settings: S
         documents, testset_size=testset_size, query_distribution=[(synthesizer, 1.0)]
     )
     return testset.to_list()
+
+
+def _generation_client(api_key: str) -> AsyncOpenAI:
+    return AsyncOpenAI(api_key=api_key, http_client=DefaultAsyncHttpxClient(limits=NO_KEEPALIVE_LIMITS))
 
 
 async def _korean_synthesizer(api_key: str, model: str) -> SingleHopSpecificQuerySynthesizer:
