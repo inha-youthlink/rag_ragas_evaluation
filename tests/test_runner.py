@@ -289,7 +289,7 @@ def test_start_run_records_baseline_conditions(conn, golden_record):
     run = run_row(conn, run_id)
     assert (run["status"], run["mode"], run["repeat_no"]) == ("RUNNING", "baseline", 2)
     assert (run["rag_chat_model"], run["rag_retriever"], run["rag_top_k"]) == ("test-baseline", "none", None)
-    assert run["metadata"] == {"prompt_version": "baseline-v0"}
+    assert run["metadata"] == {"prompt_version": "baseline-v0", "scoring_prompt": "answer_relevancy-ko-v1"}
     assert (run["judge_model"], run["embedding_model"]) == ("test-judge", "test-emb")
     count = fetch(conn, "SELECT COUNT(*) AS n FROM ragas_evaluation_samples WHERE run_id = %s", [run_id])[0]["n"]
     assert count == 2
@@ -297,7 +297,10 @@ def test_start_run_records_baseline_conditions(conn, golden_record):
 
 @pytest.mark.db
 def test_check_resumable_accepts_matching_running_run(conn, golden_record):
-    run_id = new_run(conn, make_samples(golden_record, 1), mode="offline")
+    run_id = start_run(
+        conn, make_samples(golden_record, 1).values(), dataset_version="golden_v1", repeat_no=1, mode="offline",
+        settings=fake_settings(),
+    )
 
     check_resumable(conn, run_id, mode="offline", dataset_version="golden_v1", settings=fake_settings())
 
@@ -505,3 +508,22 @@ def test_rag_settings_change_during_run_marks_failed(conn, golden_record):
     answer = fetch(conn, "SELECT answer FROM ragas_evaluation_samples WHERE run_id = %s AND sample_id = %s",
                    [run_id, "single-000002"])[0]["answer"]
     assert answer is None
+
+
+
+@pytest.mark.db
+def test_start_run_records_scoring_prompt_in_every_mode(conn, golden_record):
+    run_id = start_run(
+        conn, make_samples(golden_record, 1).values(), dataset_version="golden_v1", repeat_no=1, mode="rag",
+        settings=fake_settings(),
+    )
+
+    assert run_row(conn, run_id)["metadata"] == {"scoring_prompt": "answer_relevancy-ko-v1"}
+
+
+@pytest.mark.db
+def test_check_resumable_rejects_run_scored_with_other_prompt(conn, golden_record):
+    run_id = new_run(conn, make_samples(golden_record, 1), mode="rag")
+
+    with pytest.raises(ValueError, match="scoring_prompt"):
+        check_resumable(conn, run_id, mode="rag", dataset_version="golden_v1", settings=fake_settings())

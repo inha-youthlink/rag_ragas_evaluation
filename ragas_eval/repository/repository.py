@@ -113,7 +113,8 @@ FIND_PENDING = sql.SQL(
 
 SELECT_RUN = """
     SELECT status, mode, dataset_version, judge_model, embedding_model, rag_chat_model,
-           metadata->>'prompt_version' AS prompt_version, rag_retriever, rag_top_k
+           metadata->>'prompt_version' AS prompt_version, rag_retriever, rag_top_k,
+           metadata->>'scoring_prompt' AS scoring_prompt
     FROM ragas_evaluation_run
     WHERE run_id = %(run_id)s
 """
@@ -154,6 +155,7 @@ class RunInfo(NamedTuple):
     prompt_version: str | None
     rag_retriever: str | None
     rag_top_k: int | None
+    scoring_prompt: str | None
 
 
 def insert_run(

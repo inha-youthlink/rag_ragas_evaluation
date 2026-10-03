@@ -19,6 +19,11 @@ from ragas.metrics.collections import (
     FactualCorrectness,
     Faithfulness,
 )
+from ragas.metrics.collections.answer_relevancy.util import (
+    AnswerRelevanceInput,
+    AnswerRelevanceOutput,
+    AnswerRelevancePrompt,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +51,8 @@ MODES = tuple(METRICS_BY_MODE)
 GPT_VERSION = re.compile(r"gpt-(\d+)(?:\.\d+)?(?:-|$)")
 # ragas 문서 권장: GPT-5 계열은 추론 토큰 때문에 구조화 출력에 4096 이상 필요
 REASONING_MAX_COMPLETION_TOKENS = 4096
+# 채점 프롬프트 버전. 바꾸면 run.metadata.scoring_prompt로 구분하고 다른 버전 run과 섞어 비교하지 않는다
+SCORING_PROMPT_VERSION = "answer_relevancy-ko-v1"
 # AnswerRelevancy의 코사인 유사도 평균은 1.0000000000000002처럼 범위를 미세하게 넘을 수 있다
 SCORE_TOLERANCE = 1e-9
 
@@ -63,6 +70,35 @@ class ScoreResult(BaseModel):
     factual_correctness: Score | None = None
     reference_faithfulness: Score | None = None
     errors: dict[str, str] = Field(default_factory=dict)
+
+
+class KoreanAnswerRelevancePrompt(AnswerRelevancePrompt):
+    """AnswerRelevancy 기본 프롬프트(영어)는 한국어 답변에서 영어 질문을 만들어 원래 질문과의 유사도가 낮아진다.
+    실행마다 같은 문구가 되도록 LLM 번역(adapt) 대신 고정 한국어 프롬프트를 쓴다."""
+
+    language = "korean"
+    instruction = """주어진 답변으로 답할 수 있는 질문을 하나 만들고, 답변이 회피성인지 판단하세요.
+질문은 반드시 한국어로 작성하세요.
+답변이 회피적이거나 모호하거나 애매하면 noncommittal을 1, 구체적이면 0으로 주세요.
+회피성 답변 예: "모르겠습니다", "확실하지 않습니다", "상황에 따라 다릅니다"."""
+    examples = [
+        (
+            AnswerRelevanceInput(response="청년 월세 지원은 만 19세부터 34세까지 신청할 수 있습니다."),
+            AnswerRelevanceOutput(question="청년 월세 지원은 몇 살까지 신청할 수 있나요?", noncommittal=0),
+        ),
+        (
+            AnswerRelevanceInput(
+                response="신청은 복지로 누리집에서 온라인으로 하며, 임대차계약서와 주민등록등본을 제출해야 합니다."
+            ),
+            AnswerRelevanceOutput(question="온라인 신청은 어디서 하고 어떤 서류를 내야 하나요?", noncommittal=0),
+        ),
+        (
+            AnswerRelevanceInput(
+                response="2027년에 새로 생기는 지원 사업의 신청 조건은 아직 발표되지 않아 알 수 없습니다."
+            ),
+            AnswerRelevanceOutput(question="2027년에 새로 생기는 지원 사업의 신청 조건은 무엇인가요?", noncommittal=1),
+        ),
+    ]
 
 
 def make_llm(model: str, client: AsyncOpenAI) -> Any:
@@ -84,10 +120,16 @@ def build_metrics(client: AsyncOpenAI, judge_model: str, embedding_model: str) -
         "context_precision": ContextPrecision(llm=llm),
         "context_recall": ContextRecall(llm=llm),
         "faithfulness": Faithfulness(llm=llm),
-        "answer_relevancy": AnswerRelevancy(llm=llm, embeddings=embeddings),
+        "answer_relevancy": _korean_answer_relevancy(llm, embeddings),
         "factual_correctness": FactualCorrectness(llm=llm),
         "reference_faithfulness": Faithfulness(llm=llm, name="reference_faithfulness"),
     }
+
+
+def _korean_answer_relevancy(llm: Any, embeddings: Any) -> AnswerRelevancy:
+    metric = AnswerRelevancy(llm=llm, embeddings=embeddings)
+    metric.prompt = KoreanAnswerRelevancePrompt()
+    return metric
 
 
 async def score_sample(

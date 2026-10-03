@@ -126,6 +126,8 @@
 | 채점 LLM | `llm_factory(<judge_model>, client=AsyncOpenAI())`, RAG `chat_model`과 다른 모델 |
 | 호출 | `await metric.ascore(...)` → `result.value` |
 | 실패 | 해당 지표 NULL, `metadata.errors` 기록 |
+| 채점 프롬프트 | `answer_relevancy`는 고정 한국어 프롬프트 (영어 기본 프롬프트는 한국어 답변에서 영어 질문을 만들어 유사도가 낮아짐). LLM 번역(adapt)은 실행마다 문구가 달라져 쓰지 않음 |
+| 프롬프트 버전 | `run.metadata.scoring_prompt` (`answer_relevancy-ko-v1`). 버전이 다른 run은 재개 불가, 보고서 모드별 비교에서 따로 집계 |
 
 ## 평가 실행 순서
 

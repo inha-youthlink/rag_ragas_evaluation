@@ -289,3 +289,16 @@ def test_make_llm_keeps_legacy_model_params(model):
     sent = llm._map_provider_params()
 
     assert "max_completion_tokens" not in sent and sent["max_tokens"] == 1024
+
+
+def test_answer_relevancy_uses_fixed_korean_prompt():
+    metrics = build_metrics(AsyncOpenAI(api_key="sk-test"), "test-judge", "test-emb")
+
+    prompt = metrics["answer_relevancy"].prompt
+    text = prompt.to_string(prompt.input_model(response="만 19세부터 34세까지 신청할 수 있습니다."))
+
+    assert isinstance(prompt, scorer.KoreanAnswerRelevancePrompt)
+    assert "한국어" in prompt.instruction and "noncommittal" in prompt.instruction
+    assert all("Einstein" not in str(example) for example in prompt.examples)
+    assert "만 19세부터 34세까지" in text
+    assert scorer.SCORING_PROMPT_VERSION == "answer_relevancy-ko-v1"

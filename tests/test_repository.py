@@ -292,7 +292,9 @@ def test_get_run_returns_resume_conditions(eval_conn, run_id):
     finished = insert_run(eval_conn, mode="offline", **{**RUN_FIELDS, "repeat_no": 2})
     finish_run(eval_conn, finished, "FAILED")
 
-    assert get_run(eval_conn, run_id) == ("RUNNING", "rag", "golden_v1", "test-judge", "test-emb", None, None, None, None)
+    assert get_run(eval_conn, run_id) == (
+        "RUNNING", "rag", "golden_v1", "test-judge", "test-emb", None, None, None, None, None
+    )
     assert get_run(eval_conn, finished)[:3] == ("FAILED", "offline", "golden_v1")
     assert get_run(eval_conn, UUID(int=0)) is None
 

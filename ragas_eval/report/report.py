@@ -27,6 +27,7 @@ SELECT_MODE_AVERAGES = sql.SQL(
     SELECT mode, COUNT(*) AS runs, {averages}
     FROM ragas_evaluation_run
     WHERE dataset_version = %(dataset_version)s AND status = 'SUCCEEDED'
+      AND metadata->>'scoring_prompt' IS NOT DISTINCT FROM %(scoring_prompt)s
     GROUP BY mode
     ORDER BY mode
 """
@@ -74,7 +75,12 @@ def load_report_data(conn: psycopg.Connection, run_id: UUID) -> ReportData:
         run = cur.fetchone()
         if run is None:
             raise ValueError(f"run이 없음: {run_id}")
-        cur.execute(SELECT_MODE_AVERAGES, {"dataset_version": run["dataset_version"]})
+        # 채점 프롬프트가 다른 run은 점수 기준이 달라 함께 평균내지 않는다
+        params = {
+            "dataset_version": run["dataset_version"],
+            "scoring_prompt": (run["metadata"] or {}).get("scoring_prompt"),
+        }
+        cur.execute(SELECT_MODE_AVERAGES, params)
         mode_averages = cur.fetchall()
         cur.execute(SELECT_SAMPLES, {"run_id": run_id})
         samples = cur.fetchall()
@@ -116,6 +122,7 @@ def _conditions(run: Mapping[str, Any]) -> str:
         ["채점 모델", run["judge_model"]],
         ["임베딩 모델", run["embedding_model"]],
         ["프롬프트 버전", (run["metadata"] or {}).get("prompt_version")],
+        ["채점 프롬프트", (run["metadata"] or {}).get("scoring_prompt")],
     ]
     return "## 실행 조건\n\n" + _table(["항목", "값"], [[k, _text(v)] for k, v in rows])
 
@@ -126,7 +133,7 @@ def _averages(run: Mapping[str, Any]) -> str:
 
 
 def _mode_comparison(dataset_version: str, mode_averages: Sequence[Mapping[str, Any]]) -> str:
-    title = f"## 모드별 비교 ({dataset_version}, 완료된 run 평균)"
+    title = f"## 모드별 비교 ({dataset_version}, 같은 채점 프롬프트의 완료된 run 평균)"
     if not mode_averages:
         return f"{title}\n\n완료된 run 없음"
     by_mode = {row["mode"]: row for row in mode_averages}

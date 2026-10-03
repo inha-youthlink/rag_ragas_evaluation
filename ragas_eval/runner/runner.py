@@ -112,16 +112,12 @@ def start_run(
     mode: Mode,
     settings: Settings,
 ) -> UUID:
-    # PRD "베이스라인 모드" run 기록: 답변 모델·검색 없음·프롬프트 버전
-    baseline_fields = (
-        {
-            "rag_chat_model": settings.baseline_model,
-            "rag_retriever": baseline_client.BASELINE_RETRIEVER,
-            "metadata": {"prompt_version": baseline_client.PROMPT_VERSION},
-        }
-        if mode == "baseline"
-        else {}
-    )
+    metadata: dict[str, Any] = {"scoring_prompt": scorer.SCORING_PROMPT_VERSION}
+    baseline_fields: dict[str, Any] = {}
+    if mode == "baseline":
+        # PRD "베이스라인 모드" run 기록: 답변 모델·검색 없음·프롬프트 버전
+        metadata["prompt_version"] = baseline_client.PROMPT_VERSION
+        baseline_fields = {"rag_chat_model": settings.baseline_model, "rag_retriever": baseline_client.BASELINE_RETRIEVER}
     run_id = repository.insert_run(
         conn,
         dataset_version=dataset_version,
@@ -129,6 +125,7 @@ def start_run(
         mode=mode,
         judge_model=settings.judge_model,
         embedding_model=settings.embedding_model,
+        metadata=metadata,
         **baseline_fields,
     )
     repository.insert_samples(conn, run_id, samples)
@@ -150,7 +147,11 @@ def check_resumable(
         raise ValueError(f"run의 mode가 다름: run={info.mode}, 요청={mode}")
     if info.dataset_version != dataset_version:
         raise ValueError(f"run의 dataset_version이 다름: run={info.dataset_version}, 요청={dataset_version}")
-    expected = {"judge_model": settings.judge_model, "embedding_model": settings.embedding_model}
+    expected = {
+        "judge_model": settings.judge_model,
+        "embedding_model": settings.embedding_model,
+        "scoring_prompt": scorer.SCORING_PROMPT_VERSION,
+    }
     if mode == "baseline":
         expected |= {"rag_chat_model": settings.baseline_model, "prompt_version": baseline_client.PROMPT_VERSION}
     changed = [name for name, value in expected.items() if getattr(info, name) != value]

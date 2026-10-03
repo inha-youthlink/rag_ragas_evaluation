@@ -40,7 +40,7 @@ def run_row(**overrides):
         "avg_reference_faithfulness": Decimal("0.550"),
         "started_at": datetime(2026, 10, 3, 10, 0, tzinfo=KST),
         "finished_at": datetime(2026, 10, 3, 10, 5, tzinfo=KST),
-        "metadata": {"prompt_version": "baseline-v0"},
+        "metadata": {"prompt_version": "baseline-v0", "scoring_prompt": "answer_relevancy-ko-v1"},
     }
     return {**row, **overrides}
 
@@ -98,6 +98,7 @@ def test_render_shows_run_conditions_and_averages():
     assert "| answer_relevancy | 0.812 |" in text
     assert "| context_precision | - |" in text
     assert "baseline-v0" in text and "test-judge" in text
+    assert "| 채점 프롬프트 | answer_relevancy-ko-v1 |" in text
 
 
 def test_render_compares_modes_with_rag_minus_baseline():
@@ -208,3 +209,22 @@ def test_report_writes_markdown_file(eval_schema_url, golden_record, monkeypatch
 
     assert path == tmp_path / "results" / f"golden_v1_offline_r1_{run_id}.md"
     assert "# RAGAS 평가 결과: golden_v1 / offline / 반복 1" in path.read_text(encoding="utf-8")
+
+
+
+@pytest.mark.db
+def test_mode_averages_only_include_runs_with_same_scoring_prompt(eval_conn, golden_record):
+    version = f"golden_v{uuid4().int % 10**9}"
+    korean = seed_run(eval_conn, golden_record, dataset_version=version, mode="baseline", factual=0.8)
+    english = seed_run(eval_conn, golden_record, dataset_version=version, mode="baseline", factual=0.2)
+    for run_id, prompt in ((korean, "answer_relevancy-ko-v1"), (english, None)):
+        if prompt:
+            eval_conn.execute(
+                "UPDATE ragas_evaluation_run SET metadata = jsonb_build_object('scoring_prompt', %s::text) WHERE run_id = %s",
+                [prompt, run_id],
+            )
+
+    data = load_report_data(eval_conn, korean)
+
+    (baseline,) = data.mode_averages
+    assert (baseline["runs"], baseline["avg_factual_correctness"]) == (1, Decimal("0.800"))
