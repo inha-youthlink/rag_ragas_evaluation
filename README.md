@@ -32,6 +32,40 @@ python -m ragas_eval run --golden datasets/golden_v1.jsonl --repeat 3
 python -m ragas_eval run --golden datasets/golden_v1.jsonl --offline
 ```
 
+## 동작 흐름
+
+데이터셋 생성 → 사람 검수 → 평가 실행 순서다. DB는 `policy`만 읽고, 쓰기는 `repository.py`가 `ragas_evaluation_*` 테이블에만 한다.
+
+### 1. 데이터셋 생성 (로컬, `generate`)
+
+| 순서 | 파일 | 역할 | 입력 → 출력 |
+|---|---|---|---|
+| 1 | `cli.py` | 명령을 받아 `generate()` 호출, 건수 출력 | 인자 → 함수 호출 |
+| 2 | `config.py` | `.env`에서 DB 주소·API 키·모델명 읽기 | `.env` → `Settings` |
+| 3 | `policy_source/policy_source.py` | `policy`를 읽기만 해서 정책별 문서로 변환 | `policy` 행 → `Document` |
+| 4 | `generate/generate.py` | ragas 생성기로 질문·정답·근거 생성 (LLM 비용) | `Document` → 생성 결과 |
+| 5 | `generate/generate.py` | 근거로 정책 매칭, 실패분 제외 | 생성 결과 → golden 형식 레코드 |
+| 6 | `generate/generate.py` | 후보 파일 저장 | → `datasets/golden_candidates.jsonl` |
+
+### 2. 사람 검수
+
+후보를 고치거나 지우고 `reviewed: true`로 표시한 뒤 `datasets/golden_vN.jsonl`로 커밋한다. 확정한 파일은 수정하지 않는다.
+
+### 3. 평가 실행 (K8s Job, `run`)
+
+| 순서 | 파일 | 역할 | 입력 → 출력 |
+|---|---|---|---|
+| 1 | `cli.py` | 명령을 받아 `runner.run()` 호출 | 인자 → 함수 호출 |
+| 2 | `dataset/dataset.py` | `reviewed` 샘플만 고르고, 정책이 바뀌거나 삭제된 샘플 제외 | `golden_vN.jsonl` + `policy` → 평가 샘플 |
+| 3 | `repository/repository.py` | run 행 생성, 샘플 행 INSERT | → `ragas_evaluation_run`, `ragas_evaluation_samples` |
+| 4 | `rag_client/rag_client.py` | 질문마다 RAG `/internal/pipeline` 호출 (rag 모드) | 질문 → 답변·청크·지연시간·토큰 |
+| 4' | `baseline_client/baseline_client.py` | RAG 없이 LLM 직접 호출 (baseline 모드) | 질문 → 답변 |
+| 5 | `repository/repository.py` | 답변·청크 저장 | → `samples.answer`, `contexts` |
+| 6 | `scorer/scorer.py` | 지표 6개 채점, 실패 지표는 NULL + 에러 기록 (LLM 비용) | 질문·답변·청크·정답 → 점수 |
+| 7 | `repository/repository.py` | 점수 저장 | → `samples` 지표 컬럼 |
+| 8 | `repository/repository.py` | 평균 집계 후 run 종료 (SUCCEEDED/FAILED) | → `run.avg_*`, `status` |
+| — | `runner/runner.py` | 3~8 순서 조율, 반복, 중단된 run 재개 | |
+
 ## 테스트
 
 ```bash
