@@ -24,8 +24,6 @@ from ragas_eval.scorer.scorer import Mode, ScoreResult
 logger = logging.getLogger(__name__)
 
 CONCURRENCY = 5  # PRD "실행 환경" asyncio.Semaphore(5)
-OPENAI_TIMEOUT_SECONDS = 30.0
-OPENAI_MAX_RETRIES = 2
 DB_CONNECT_TIMEOUT_SECONDS = 10
 # RAG 일시 장애(연결 오류·타임아웃·5xx)만 재시도한다. 계약 위반·4xx는 재시도해도 같으므로 바로 실패
 RAG_RETRIES = 2
@@ -296,8 +294,8 @@ async def _workers(settings: Settings, mode: Mode) -> AsyncIterator[Workers]:
     """모드별 응답 함수와 채점 함수를 만들고, 쓰는 동안 HTTP·OpenAI 클라이언트를 열어 둔다."""
     async with AsyncOpenAI(
         api_key=settings.openai_api_key.get_secret_value(),
-        timeout=OPENAI_TIMEOUT_SECONDS,
-        max_retries=OPENAI_MAX_RETRIES,
+        timeout=settings.openai_timeout,
+        max_retries=settings.openai_max_retries,
     ) as openai_client:
         metrics = scorer.build_metrics(openai_client, settings.judge_model, settings.embedding_model)
 

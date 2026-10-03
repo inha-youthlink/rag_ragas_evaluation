@@ -1,7 +1,7 @@
 # 평가에 필요한 환경변수를 읽는 설정
 from functools import lru_cache
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +10,8 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        # RAG .env와 같이 빈 값은 기본값으로 본다 (필수 값을 비우면 누락으로 실패)
+        env_ignore_empty=True,
     )
 
     database_url: SecretStr
@@ -21,6 +23,9 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-small"
     # run --baseline에서만 사용. RAG chat_model과 같은 모델로 둬야 공정 비교가 된다
     baseline_model: str | None = None
+    # baseline·채점 OpenAI 호출. 공정 비교를 위해 RAG OPENAI_TIMEOUT·OPENAI_MAX_RETRIES 기본값과 맞춘다
+    openai_timeout: float = Field(default=30.0, gt=0)
+    openai_max_retries: int = Field(default=2, ge=0)
 
 
 @lru_cache
