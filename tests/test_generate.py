@@ -217,3 +217,65 @@ def test_generation_client_survives_new_event_loop_per_step(stub_openai_url):
         return len(responses)
 
     assert [asyncio.run(batch()) for _ in range(5)] == [20] * 5
+
+
+# ---- 페르소나 이름 보정 ----
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        pytest.param("김도윤", "김도윤", id="exact"),
+        pytest.param("김도윤 (재직 기술인력)", "김도윤", id="parenthesized-description"),
+        pytest.param("  김도윤 ", "김도윤", id="surrounding-whitespace"),
+        pytest.param("박서연", None, id="unknown"),
+    ],
+)
+def test_resolve_persona_name(name, expected):
+    assert generate.resolve_persona_name(name, {"김도윤", "이하은"}) == expected
+
+
+def test_tolerant_synthesizer_keeps_matched_and_skips_unknown_personas():
+    from ragas.testset.graph import Node, NodeType
+    from ragas.testset.persona import Persona
+
+    personas = [Persona(name="김도윤", role_description="재직 기술인력"), Persona(name="이하은", role_description="대학생")]
+    concepts = {"김도윤 (재직 기술인력)": ["월세"], "박서연": ["월세"], "이하은": ["창업"]}
+    synthesizer = generate.TolerantSingleHopSynthesizer(llm=None)
+
+    (sample,) = synthesizer.prepare_combinations(Node(type=NodeType.CHUNK), ["월세"], personas, concepts)
+
+    assert [p.name for p in sample["personas"]] == ["김도윤"]
+    assert synthesizer.name == "single_hop_specific_query_synthesizer"
+
+
+# ---- 분석(지식 그래프) 캐시 ----
+
+
+def test_cache_key_changes_with_content_and_models():
+    base = generate.kg_cache_key(DOCS, "gen-a", "emb-a")
+
+    assert base == generate.kg_cache_key(list(DOCS), "gen-a", "emb-a")
+    assert base != generate.kg_cache_key(DOCS, "gen-b", "emb-a")
+    assert base != generate.kg_cache_key(DOCS, "gen-a", "emb-b")
+    assert base != generate.kg_cache_key([DOCS[0], doc("TEST-0002", "바뀐 정책 본문")], "gen-a", "emb-a")
+
+
+def test_build_knowledge_graph_analyzes_once_then_loads_cache(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_apply(kg, transforms, *args, **kwargs):
+        calls.append(len(kg.nodes))
+        kg.nodes[0].properties["summary"] = "분석 결과"
+
+    monkeypatch.setattr(generate, "default_transforms", lambda **kwargs: ["fake-transform"])
+    monkeypatch.setattr(generate, "apply_transforms", fake_apply)
+    cache = tmp_path / "cache" / "kg.json"
+
+    first = generate.build_knowledge_graph(DOCS, llm=None, embeddings=None, cache_path=cache)
+    second = generate.build_knowledge_graph(DOCS, llm=None, embeddings=None, cache_path=cache)
+
+    assert calls == [2]
+    assert cache.exists()
+    assert second.nodes[0].properties["summary"] == "분석 결과"
+    assert second.nodes[0].properties["document_metadata"]["policy_no"] == first.nodes[0].properties["document_metadata"]["policy_no"]

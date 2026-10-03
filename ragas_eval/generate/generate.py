@@ -1,5 +1,6 @@
 # TestsetGenerator로 데이터셋 후보(golden_candidates.jsonl)를 생성
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -14,7 +15,10 @@ from openai import DEFAULT_CONNECTION_LIMITS, AsyncOpenAI, DefaultAsyncHttpxClie
 from pydantic import ValidationError
 from ragas.embeddings import OpenAIEmbeddings
 from ragas.testset import TestsetGenerator
+from ragas.testset.graph import KnowledgeGraph, Node, NodeType
+from ragas.testset.persona import Persona
 from ragas.testset.synthesizers.single_hop.specific import SingleHopSpecificQuerySynthesizer
+from ragas.testset.transforms import apply_transforms, default_transforms
 
 from ragas_eval.config import Settings, get_settings
 from ragas_eval.dataset.dataset import GoldenSample
@@ -30,6 +34,8 @@ LANGUAGE = "korean"
 NO_KEEPALIVE_LIMITS = type(DEFAULT_CONNECTION_LIMITS)(
     max_connections=DEFAULT_CONNECTION_LIMITS.max_connections, max_keepalive_connections=0
 )
+# 정책 분석 결과(ragas 지식 그래프) 캐시. 생성 실패 후 재시도·본 생성에서 분석 비용을 다시 쓰지 않는다
+KG_CACHE_DIR = Path("datasets/.cache")
 # 확정 데이터셋은 수정하지 않는다(CLAUDE.md). 생성 결과로 덮어쓰지 않도록 막는다
 CONFIRMED_DATASET = re.compile(r"golden_v\d+\.jsonl", re.IGNORECASE)
 
@@ -124,19 +130,73 @@ def _load_target_documents(settings: Settings) -> list[Document]:
         return load_documents(conn, datetime.now(KST).date())
 
 
+def resolve_persona_name(name: str, names: set[str]) -> str | None:
+    """LLM이 페르소나 이름에 설명을 붙여 답해도(예: '김도윤 (재직 기술인력)') 원래 이름으로 되돌린다."""
+    for candidate in (name.strip(), name.split("(")[0].strip()):
+        if candidate in names:
+            return candidate
+    return None
+
+
+class TolerantSingleHopSynthesizer(SingleHopSpecificQuerySynthesizer):
+    """ragas는 페르소나 이름이 정확히 같아야 찾고, 다르면 KeyError로 생성 전체가 멈춘다.
+    이름을 보정하고 끝내 못 찾은 페르소나만 건너뛴다."""
+
+    def prepare_combinations(
+        self, node: Node, terms: list[str], personas: list[Persona], persona_concepts: dict[str, list[str]]
+    ) -> list[dict[str, Any]]:
+        names = {p.name for p in personas}
+        resolved: dict[str, list[str]] = {}
+        for name, concepts in persona_concepts.items():
+            matched = resolve_persona_name(name, names)
+            if matched is None:
+                logger.warning("페르소나 이름을 찾지 못해 건너뜀")
+                continue
+            resolved.setdefault(matched, []).extend(concepts)
+        return super().prepare_combinations(node, terms, personas, resolved)
+
+
+def kg_cache_key(documents: Sequence[Document], gen_model: str, embedding_model: str) -> str:
+    """정책 본문·모델이 같을 때만 같은 캐시를 쓴다."""
+    digest = hashlib.sha256(f"{gen_model}\n{embedding_model}".encode())
+    for doc in documents:
+        digest.update(f"\n{doc.metadata.get('policy_no')}\n{doc.page_content}".encode())
+    return digest.hexdigest()[:16]
+
+
+def build_knowledge_graph(
+    documents: Sequence[Document], *, llm: Any, embeddings: Any, cache_path: Path
+) -> KnowledgeGraph:
+    """ragas generate_with_langchain_docs의 분석 단계와 같다. 결과를 파일로 남겨 다음 실행에서 재사용한다."""
+    if cache_path.exists():
+        logger.warning("정책 분석 캐시 사용 (분석 LLM 호출 없음): %s", cache_path)
+        return KnowledgeGraph.load(cache_path)
+    nodes = [
+        Node(
+            type=NodeType.DOCUMENT,
+            properties={"page_content": doc.page_content, "document_metadata": doc.metadata},
+        )
+        for doc in documents
+    ]
+    kg = KnowledgeGraph(nodes=nodes)
+    apply_transforms(kg, default_transforms(documents=list(documents), llm=llm, embedding_model=embeddings))
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    kg.save(cache_path)
+    return kg
+
+
 def _run_generator(documents: Sequence[Document], testset_size: int, settings: Settings) -> list[dict]:
     api_key = settings.openai_api_key.get_secret_value()
     synthesizer = asyncio.run(_korean_synthesizer(api_key, settings.gen_model))
 
     client = _generation_client(api_key)
     llm = make_llm(settings.gen_model, client)
+    embeddings = OpenAIEmbeddings(client=client, model=settings.embedding_model)
     synthesizer.llm = llm
-    generator = TestsetGenerator(
-        llm=llm, embedding_model=OpenAIEmbeddings(client=client, model=settings.embedding_model)
-    )
-    testset = generator.generate_with_langchain_docs(
-        documents, testset_size=testset_size, query_distribution=[(synthesizer, 1.0)]
-    )
+    cache_path = KG_CACHE_DIR / f"kg_{kg_cache_key(documents, settings.gen_model, settings.embedding_model)}.json"
+    kg = build_knowledge_graph(documents, llm=llm, embeddings=embeddings, cache_path=cache_path)
+    generator = TestsetGenerator(llm=llm, embedding_model=embeddings, knowledge_graph=kg)
+    testset = generator.generate(testset_size=testset_size, query_distribution=[(synthesizer, 1.0)])
     return testset.to_list()
 
 
@@ -144,10 +204,10 @@ def _generation_client(api_key: str) -> AsyncOpenAI:
     return AsyncOpenAI(api_key=api_key, http_client=DefaultAsyncHttpxClient(limits=NO_KEEPALIVE_LIMITS))
 
 
-async def _korean_synthesizer(api_key: str, model: str) -> SingleHopSpecificQuerySynthesizer:
+async def _korean_synthesizer(api_key: str, model: str) -> TolerantSingleHopSynthesizer:
     async with AsyncOpenAI(api_key=api_key) as client:
         llm = make_llm(model, client)
-        synthesizer = SingleHopSpecificQuerySynthesizer(llm=llm)
+        synthesizer = TolerantSingleHopSynthesizer(llm=llm)
         prompts = await synthesizer.adapt_prompts(LANGUAGE, llm=llm)
         synthesizer.set_prompts(**prompts)
     return synthesizer
