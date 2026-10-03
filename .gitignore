@@ -9,3 +9,6 @@ datasets/golden_candidates.jsonl
 
 # Claude Code 로컬 권한 설정
 .claude/settings.local.json
+
+# report 성적표 (로컬 결과물)
+results/
