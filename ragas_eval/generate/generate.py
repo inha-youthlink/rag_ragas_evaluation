@@ -13,13 +13,13 @@ from langchain_core.documents import Document
 from openai import AsyncOpenAI
 from pydantic import ValidationError
 from ragas.embeddings import OpenAIEmbeddings
-from ragas.llms import llm_factory
 from ragas.testset import TestsetGenerator
 from ragas.testset.synthesizers.single_hop.specific import SingleHopSpecificQuerySynthesizer
 
 from ragas_eval.config import Settings, get_settings
 from ragas_eval.dataset.dataset import GoldenSample
 from ragas_eval.policy_source.policy_source import load_documents
+from ragas_eval.scorer.scorer import make_llm
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,7 @@ def _run_generator(documents: Sequence[Document], testset_size: int, settings: S
     # ragas는 변환·생성 단계마다 새 이벤트 루프(asyncio.run)를 열어 이 클라이언트를 여러 루프에서 재사용한다.
     # 닫힌 루프에 묶인 연결 오류는 SDK 기본 재시도(2회)로 복구된다(스텁 서버로 확인, 실제 OpenAI 미확인)
     client = AsyncOpenAI(api_key=api_key)
-    llm = llm_factory(settings.gen_model, client=client)
+    llm = make_llm(settings.gen_model, client)
     synthesizer.llm = llm
     generator = TestsetGenerator(
         llm=llm, embedding_model=OpenAIEmbeddings(client=client, model=settings.embedding_model)
@@ -139,7 +139,7 @@ def _run_generator(documents: Sequence[Document], testset_size: int, settings: S
 
 async def _korean_synthesizer(api_key: str, model: str) -> SingleHopSpecificQuerySynthesizer:
     async with AsyncOpenAI(api_key=api_key) as client:
-        llm = llm_factory(model, client=client)
+        llm = make_llm(model, client)
         synthesizer = SingleHopSpecificQuerySynthesizer(llm=llm)
         prompts = await synthesizer.adapt_prompts(LANGUAGE, llm=llm)
         synthesizer.set_prompts(**prompts)

@@ -270,3 +270,22 @@ def test_build_metrics_creates_six_metrics_without_network(monkeypatch):
     ]
     assert metrics["reference_faithfulness"] is not metrics["faithfulness"]
     assert metrics["reference_faithfulness"].name == "reference_faithfulness"
+
+
+@pytest.mark.parametrize("model", ["gpt-5.6-terra", "gpt-5.4-mini", "gpt-5.5", "gpt-5", "gpt-6-luna"])
+def test_make_llm_sends_reasoning_params_for_gpt5_and_newer(model):
+    llm = scorer.make_llm(model, AsyncOpenAI(api_key="sk-test"))
+
+    sent = llm._map_provider_params()
+
+    assert "max_tokens" not in sent and "top_p" not in sent
+    assert (sent["max_completion_tokens"], sent["temperature"]) == (scorer.REASONING_MAX_COMPLETION_TOKENS, 1.0)
+
+
+@pytest.mark.parametrize("model", ["gpt-4o", "gpt-4.1-mini"])
+def test_make_llm_keeps_legacy_model_params(model):
+    llm = scorer.make_llm(model, AsyncOpenAI(api_key="sk-test"))
+
+    sent = llm._map_provider_params()
+
+    assert "max_completion_tokens" not in sent and sent["max_tokens"] == 1024

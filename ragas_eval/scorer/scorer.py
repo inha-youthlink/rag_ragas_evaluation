@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import math
+import re
 from collections.abc import Mapping
 from numbers import Real
 from types import MappingProxyType
@@ -40,6 +41,11 @@ METRICS_BY_MODE = MappingProxyType(
     }
 )
 MODES = tuple(METRICS_BY_MODE)
+# ragas 0.4.3은 모델 버전을 정수로만 읽어 gpt-5.6-terra 같은 소수점 버전을 GPT-5 이상으로 보지 못한다.
+# 그러면 지원하지 않는 max_tokens를 보내 400이 나므로 GPT-5 이상은 직접 추론 모델 인자로 맞춘다
+GPT_VERSION = re.compile(r"gpt-(\d+)(?:\.\d+)?(?:-|$)")
+# ragas 문서 권장: GPT-5 계열은 추론 토큰 때문에 구조화 출력에 4096 이상 필요
+REASONING_MAX_COMPLETION_TOKENS = 4096
 # AnswerRelevancy의 코사인 유사도 평균은 1.0000000000000002처럼 범위를 미세하게 넘을 수 있다
 SCORE_TOLERANCE = 1e-9
 
@@ -59,8 +65,20 @@ class ScoreResult(BaseModel):
     errors: dict[str, str] = Field(default_factory=dict)
 
 
+def make_llm(model: str, client: AsyncOpenAI) -> Any:
+    """ragas 구조화 출력 LLM. GPT-5 이상은 max_completion_tokens·temperature 1.0으로 보낸다."""
+    llm = llm_factory(model, client=client)
+    matched = GPT_VERSION.match(model.lower())
+    if matched and int(matched.group(1)) >= 5:
+        # model_args는 호출마다 복사돼 요청 인자가 되므로 생성 직후 한 번 바꾼다
+        llm.model_args.pop("max_tokens", None)
+        llm.model_args.pop("top_p", None)
+        llm.model_args.update(max_completion_tokens=REASONING_MAX_COMPLETION_TOKENS, temperature=1.0)
+    return llm
+
+
 def build_metrics(client: AsyncOpenAI, judge_model: str, embedding_model: str) -> dict[str, Any]:
-    llm = llm_factory(judge_model, client=client)
+    llm = make_llm(judge_model, client)
     embeddings = OpenAIEmbeddings(client=client, model=embedding_model)
     return {
         "context_precision": ContextPrecision(llm=llm),
