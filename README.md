@@ -30,6 +30,12 @@ python -m ragas_eval run --golden datasets/golden_v1.jsonl --repeat 3
 
 # RAG 없이 정답을 응답으로 넣어 채점 → DB 저장 경로만 검증
 python -m ragas_eval run --golden datasets/golden_v1.jsonl --offline
+
+# RAG 없이 BASELINE_MODEL에 직접 질문 → 할루시네이션 기준선
+python -m ragas_eval run --golden datasets/golden_v1.jsonl --baseline --repeat 3
+
+# 응답 실패·중단으로 RUNNING에 남은 run을 미완료 샘플만 이어서 실행 (같은 모드 옵션 함께 지정)
+python -m ragas_eval run --golden datasets/golden_v1.jsonl --resume <run_id>
 ```
 
 ## 동작 흐름

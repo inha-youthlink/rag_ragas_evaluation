@@ -17,7 +17,10 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = sub.add_parser("run", help="확정 데이터셋으로 평가 실행")
     run_parser.add_argument("--golden", required=True)
     run_parser.add_argument("--repeat", type=int, default=1)
-    run_parser.add_argument("--offline", action="store_true", help="RAG 대신 ground_truth·reference_contexts로 채점 경로 검증")
+    mode = run_parser.add_mutually_exclusive_group()
+    mode.add_argument("--offline", action="store_true", help="RAG 대신 ground_truth·reference_contexts로 채점 경로 검증")
+    mode.add_argument("--baseline", action="store_true", help="RAG 없이 BASELINE_MODEL에 직접 질문 (할루시네이션 기준선)")
+    run_parser.add_argument("--resume", metavar="RUN_ID", help="RUNNING으로 남은 run의 미완료 샘플만 이어서 실행")
 
     return parser
 
@@ -29,4 +32,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         summary = generate.generate(testset_size=args.testset_size, out_path=args.out)
         print(f"후보 {summary.written}건 저장, 정책 매칭 실패·빈 값 {summary.dropped}건 제외: {args.out}")
     elif args.command == "run":
-        runner.run(golden_path=args.golden, repeat=args.repeat, offline=args.offline)
+        outcomes = runner.run(
+            golden_path=args.golden,
+            repeat=args.repeat,
+            offline=args.offline,
+            baseline=args.baseline,
+            resume=args.resume,
+        )
+        for o in outcomes:
+            print(f"run {o.run_id}: {o.status} (미응답 {o.pending_answer}건, 미채점 {o.pending_scores}건)")
+        # 미완료 run이 있으면 Job이 실패로 보이게 해 --resume이 필요함을 드러낸다
+        if any(o.status != "SUCCEEDED" for o in outcomes):
+            raise SystemExit(1)

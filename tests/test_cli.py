@@ -1,8 +1,11 @@
 # CLI 서브커맨드 인자 파싱 테스트
+from uuid import UUID
+
 import pytest
 
 from ragas_eval.generate import generate
 from ragas_eval.runner import runner
+from ragas_eval.runner.runner import RunOutcome
 from ragas_eval.cli import build_parser, main
 
 
@@ -41,11 +44,47 @@ def test_run_parses_offline_flag():
 
 def test_main_passes_offline_to_runner(monkeypatch):
     calls = []
-    monkeypatch.setattr(runner, "run", lambda **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(runner, "run", lambda **kwargs: calls.append(kwargs) or [])
 
     main(["run", "--golden", "datasets/golden_v1.jsonl", "--offline"])
 
-    assert calls == [{"golden_path": "datasets/golden_v1.jsonl", "repeat": 1, "offline": True}]
+    assert calls == [
+        {"golden_path": "datasets/golden_v1.jsonl", "repeat": 1, "offline": True, "baseline": False, "resume": None}
+    ]
+
+
+def test_run_parses_baseline_and_resume():
+    args = build_parser().parse_args(["run", "--golden", "datasets/golden_v1.jsonl", "--baseline", "--resume", "abc"])
+
+    assert (args.baseline, args.offline, args.resume) == (True, False, "abc")
+
+
+def test_run_rejects_offline_with_baseline():
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["run", "--golden", "datasets/golden_v1.jsonl", "--offline", "--baseline"])
+
+
+def outcome(status, pending_answer=0):
+    return RunOutcome(UUID(int=7), status, pending_answer, 0)
+
+
+def test_main_prints_run_outcomes(monkeypatch, capsys):
+    monkeypatch.setattr(runner, "run", lambda **kwargs: [outcome("SUCCEEDED")])
+
+    main(["run", "--golden", "datasets/golden_v1.jsonl"])
+
+    out = capsys.readouterr().out
+    assert str(UUID(int=7)) in out and "SUCCEEDED" in out
+
+
+def test_main_exits_nonzero_when_run_incomplete(monkeypatch, capsys):
+    monkeypatch.setattr(runner, "run", lambda **kwargs: [outcome("RUNNING", pending_answer=2)])
+
+    with pytest.raises(SystemExit) as exc:
+        main(["run", "--golden", "datasets/golden_v1.jsonl"])
+
+    assert exc.value.code == 1
+    assert "RUNNING" in capsys.readouterr().out
 
 
 def test_main_prints_generate_counts(monkeypatch, capsys):

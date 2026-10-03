@@ -111,6 +111,28 @@ FIND_PENDING = sql.SQL(
 ).format(all_null=sql.SQL(" AND ").join(sql.SQL("{} IS NULL").format(sql.Identifier(n)) for n in METRIC_NAMES))
 
 
+SELECT_RUN = """
+    SELECT status, mode, dataset_version, judge_model, embedding_model, rag_chat_model,
+           metadata->>'prompt_version' AS prompt_version, rag_retriever, rag_top_k
+    FROM ragas_evaluation_run
+    WHERE run_id = %(run_id)s
+"""
+
+# 재개 시 채점만 남은 샘플은 저장된 응답을 다시 쓴다 (RAG·baseline 재호출 비용 방지)
+SELECT_ANSWERS = """
+    SELECT sample_id, answer, contexts
+    FROM ragas_evaluation_samples
+    WHERE run_id = %(run_id)s AND sample_id = ANY(%(sample_ids)s) AND answer IS NOT NULL
+"""
+
+
+SELECT_SAMPLE_TEXTS = """
+    SELECT sample_id, question, ground_truth
+    FROM ragas_evaluation_samples
+    WHERE run_id = %(run_id)s AND sample_id = ANY(%(sample_ids)s)
+"""
+
+
 class RunNotWritableError(RuntimeError):
     """run이 없거나 RUNNING이 아니거나(종료된 이전 run) 대상 샘플이 없어 UPDATE되지 않음."""
 
@@ -118,6 +140,20 @@ class RunNotWritableError(RuntimeError):
 class Pending(NamedTuple):
     need_answer: list[str]
     need_scores: list[str]
+
+
+class RunInfo(NamedTuple):
+    """재개 전 확인할 run 조건 (상태, 모드, 데이터셋, 채점·답변 모델, baseline 프롬프트 버전)."""
+
+    status: str
+    mode: str
+    dataset_version: str
+    judge_model: str
+    embedding_model: str
+    rag_chat_model: str | None
+    prompt_version: str | None
+    rag_retriever: str | None
+    rag_top_k: int | None
 
 
 def insert_run(
@@ -213,6 +249,27 @@ def find_pending(conn: psycopg.Connection, run_id: UUID) -> Pending:
         need_answer=[sample_id for sample_id, need_answer in rows if need_answer],
         need_scores=[sample_id for sample_id, need_answer in rows if not need_answer],
     )
+
+
+def get_run(conn: psycopg.Connection, run_id: UUID) -> RunInfo | None:
+    with conn.cursor() as cur:
+        cur.execute(SELECT_RUN, {"run_id": run_id})
+        row = cur.fetchone()
+    return RunInfo(*row) if row else None
+
+
+def load_answers(
+    conn: psycopg.Connection, run_id: UUID, sample_ids: Iterable[str]
+) -> dict[str, tuple[str, list[dict[str, Any]]]]:
+    with conn.cursor() as cur:
+        cur.execute(SELECT_ANSWERS, {"run_id": run_id, "sample_ids": list(sample_ids)})
+        return {sample_id: (answer, contexts) for sample_id, answer, contexts in cur.fetchall()}
+
+
+def load_sample_texts(conn: psycopg.Connection, run_id: UUID, sample_ids: Iterable[str]) -> dict[str, tuple[str, str]]:
+    with conn.cursor() as cur:
+        cur.execute(SELECT_SAMPLE_TEXTS, {"run_id": run_id, "sample_ids": list(sample_ids)})
+        return {sample_id: (question, ground_truth) for sample_id, question, ground_truth in cur.fetchall()}
 
 
 def _execute_one(

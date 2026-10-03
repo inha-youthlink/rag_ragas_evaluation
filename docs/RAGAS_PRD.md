@@ -143,6 +143,13 @@
 - 이전 run 덮어쓰기 없음
 - 재개: `answer IS NULL` → 3부터, 지표 전부 NULL → 4부터
 - 재개 대상: `RUNNING`으로 남은 run만 (Pod 강제 종료·시간 초과). `FAILED` run은 재개하지 않고 새 run으로 다시 실행 (이전 run 수정 금지, run 1개 = 같은 조건 1회 실행)
+- 재개 방법: `run --resume <run_id>` 명시 (`--repeat`와 함께 불가). 채점만 남은 샘플은 저장된 응답 재사용
+- 재개 조건: `mode`, `dataset_version`, `judge_model`, `embedding_model` (baseline은 `BASELINE_MODEL`, `prompt_version`도), golden 질문·정답이 run 시작 때와 같을 것. 다르면 새 run
+- RAG 재시도: 연결 오류·타임아웃·5xx만 2회 (1초, 2초 대기). 4xx·계약 위반은 재시도 없음. baseline·채점은 OpenAI SDK 재시도 2회
+- 응답 실패 (재시도 후): `answer` NULL 유지, `sample_id`·에러 종류만 로그 → 나머지 계속 → 미완료가 있으면 집계하지 않고 `RUNNING`으로 남김 (종료 코드 1, 남은 반복 중단)
+- 예기치 못한 오류 (DB·코드): 진행 중 작업 취소 후 `FAILED`
+- RAG 설정 변경 감지: 응답의 `chat_model`·`retriever`·`top_k`가 run에 기록된 값과 다르면 (RAG 재배포) `FAILED`
+- 커밋 단위: run·samples INSERT 1회, 샘플별 응답 UPDATE·채점 UPDATE마다 (중단돼도 진행분 보존)
 - 성적표: `ragas_evaluation_run.avg_*` (실행별), `ragas_evaluation_samples` (샘플별)
 
 ## RAG 연동 계약
@@ -282,6 +289,7 @@
 - `python -m ragas_eval run --golden datasets/golden_v1.jsonl --repeat 3`
 - `python -m ragas_eval run --golden datasets/golden_v1.jsonl --offline`
 - `python -m ragas_eval run --golden datasets/golden_v1.jsonl --baseline --repeat 3`
+- `python -m ragas_eval run --golden datasets/golden_v1.jsonl --resume <run_id>`
 
 ## 실행 환경
 
@@ -332,7 +340,7 @@
 - [x] 2-6. `scorer` 지표 6개 확장 + 모드별 적용 지표
 - [x] 2-7. `baseline_client` + 테스트 (`AsyncMock` OpenAI)
 - [x] 3-1. `generate` + 테스트
-- [ ] 3-2. `runner` + 테스트 (`--repeat`, `--offline`, `--baseline`, 재개, 실패 시 `FAILED`)
+- [x] 3-2. `runner` + 테스트 (`--repeat`, `--offline`, `--baseline`, 재개, 실패 시 `FAILED`)
 - [ ] 4-1. `Dockerfile` (Python 3.12, `datasets/` 포함)
 - [ ] 4-2. `k8s/ragas-eval-job.yaml`
 

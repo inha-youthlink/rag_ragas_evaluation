@@ -12,7 +12,9 @@ from ragas_eval.repository.repository import (
     RunNotWritableError,
     find_pending,
     finish_run,
+    get_run,
     insert_run,
+    load_answers,
     insert_samples,
     update_answer,
     update_run_rag_settings,
@@ -283,6 +285,25 @@ def test_all_failed_scores_are_pending_again(eval_conn, filled_run, rag_payload)
     pending = find_pending(eval_conn, filled_run)
 
     assert pending.need_scores == ["single-000001"]
+
+
+@pytest.mark.db
+def test_get_run_returns_resume_conditions(eval_conn, run_id):
+    finished = insert_run(eval_conn, mode="offline", **{**RUN_FIELDS, "repeat_no": 2})
+    finish_run(eval_conn, finished, "FAILED")
+
+    assert get_run(eval_conn, run_id) == ("RUNNING", "rag", "golden_v1", "test-judge", "test-emb", None, None, None, None)
+    assert get_run(eval_conn, finished)[:3] == ("FAILED", "offline", "golden_v1")
+    assert get_run(eval_conn, UUID(int=0)) is None
+
+
+@pytest.mark.db
+def test_load_answers_returns_stored_answer_and_chunks(eval_conn, filled_run, rag_payload):
+    update_answer(eval_conn, filled_run, "single-000001", rag_result(rag_payload))
+
+    answers = load_answers(eval_conn, filled_run, ["single-000001", "single-000002"])
+
+    assert answers == {"single-000001": (rag_payload["answer"], rag_payload["trace"]["chunks"])}
 
 
 @pytest.mark.db
