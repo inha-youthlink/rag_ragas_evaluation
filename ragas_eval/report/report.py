@@ -16,6 +16,7 @@ DEFAULT_OUT_DIR = "results"
 DB_CONNECT_TIMEOUT_SECONDS = 10
 LOW_SAMPLE_COUNT = 10
 QUESTION_MAX_CHARS = 60
+ANSWER_MAX_CHARS = 200
 # baseline 대비 rag 개선폭 (PRD "베이스라인 모드" 비교 지표 포함 6개 전부)
 COMPARE_MODES = ("baseline", "rag")
 
@@ -165,12 +166,13 @@ def _low_samples(samples: Sequence[Mapping[str, Any]]) -> str:
     # 채점 실패(NULL)를 먼저, 그다음 factual_correctness 낮은 순
     answered = [s for s in samples if s["answer"] is not None]
     ranked = sorted(answered, key=lambda s: (s["factual_correctness"] is not None, s["factual_correctness"] or 0))
-    headers = ["sample_id", "policy_no", "질문", "factual_correctness", "reference_faithfulness", "실패 지표"]
+    headers = ["sample_id", "policy_no", "질문", "답변", "factual_correctness", "reference_faithfulness", "실패 지표"]
     rows = [
         [
             s["sample_id"],
             s["policy_no"],
             _text(s["question"], QUESTION_MAX_CHARS),
+            _text(s["answer"], ANSWER_MAX_CHARS),
             _score(s["factual_correctness"]),
             _score(s["reference_faithfulness"]),
             _text(", ".join(f"{k}:{v}" for k, v in (s["errors"] or {}).items())),

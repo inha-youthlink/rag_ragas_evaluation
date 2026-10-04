@@ -133,6 +133,16 @@ def test_render_lists_lowest_samples_first_with_pending_counts():
     assert "TimeoutError" in low
 
 
+def test_render_shows_truncated_answer_in_low_samples():
+    samples = [sample_row("single-000001", Decimal("0.100"), answer="가" * 250)]
+
+    text = render(report_data(samples=samples))
+
+    low = text.split("## 점수 낮은 샘플")[1]
+    assert "| 답변 |" in low
+    assert "가" * 200 + "…" in low and "가" * 201 not in low
+
+
 def test_render_escapes_table_breaking_characters():
     samples = [sample_row("single-000001", Decimal("0.100"), question="소득 | 조건\n알려줘")]
 
