@@ -73,7 +73,10 @@ def make_client(base_url: str) -> httpx.AsyncClient:
 async def call_pipeline(
     client: httpx.AsyncClient, question: str, profile: Mapping[str, Any] | None = None
 ) -> RagResult:
-    response = await client.post(PIPELINE_PATH, json={"question": question, "profile": dict(profile or {})})
+    # 근거 텍스트(contexts) 같은 무거운 trace는 debug 요청에만 실리므로 평가에서는 항상 켠다
+    response = await client.post(
+        PIPELINE_PATH, params={"debug": "true"}, json={"question": question, "profile": dict(profile or {})}
+    )
     response.raise_for_status()
     # 응답 본문이 로그·traceback에 남지 않도록 위치·종류만 남기고, except 밖에서 던져 __context__도 끊는다
     try:

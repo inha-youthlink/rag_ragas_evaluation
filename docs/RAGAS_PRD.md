@@ -158,7 +158,7 @@
 
 | 항목 | 값 |
 | --- | --- |
-| 호출 | `POST {RAG_BASE_URL}/internal/pipeline` (trace는 항상 포함) |
+| 호출 | `POST {RAG_BASE_URL}/internal/pipeline?debug=true` (`contexts`·`retrieved_chunks` 같은 무거운 trace는 debug 요청에만 포함) |
 | 요청 | `PipelineInput` = `{question, profile}` |
 | 응답 | `PipelineOutput` = `{answer, policies[], trace}` |
 | `trace` 필수 키 | `contexts` (list[str]), `retrieved_chunks` (`chunk_id`, `policy_no`, `score`, 선택 `content`), `latency_ms.total`, `tokens.prompt`·`tokens.completion`, `chat_model`, `retriever`, `top_k` |

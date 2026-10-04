@@ -66,7 +66,7 @@ def call_with(payload, status_code=200, profile=None):
     return asyncio.run(call()), requests
 
 
-def test_call_pipeline_posts_question_and_profile(rag_payload):
+def test_call_pipeline_posts_question_and_profile_with_debug(rag_payload):
     profile = {"age": 25, "region_code": "11000"}
 
     _, requests = call_with(rag_payload, profile=profile)
@@ -74,7 +74,7 @@ def test_call_pipeline_posts_question_and_profile(rag_payload):
     (request,) = requests
     assert request.method == "POST"
     assert request.url.path == "/internal/pipeline"
-    assert not request.url.params
+    assert request.url.params["debug"] == "true"
     assert json.loads(request.content) == {"question": "가짜 질문", "profile": profile}
 
 
