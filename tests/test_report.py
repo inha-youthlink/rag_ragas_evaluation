@@ -160,7 +160,7 @@ def test_render_marks_unfinished_run():
 def test_report_path_names_file_by_run_conditions(tmp_path):
     path = report_path(run_row(), tmp_path)
 
-    assert path == tmp_path / f"golden_v1_baseline_r2_{RUN_ID}.md"
+    assert path == tmp_path / "golden_v1" / f"golden_v1_baseline_r2_{RUN_ID}.md"
 
 
 # ---- DB 조회 (임시 DB) ----
@@ -217,7 +217,7 @@ def test_report_writes_markdown_file(eval_schema_url, golden_record, monkeypatch
 
     path = report.report(run_id, out_dir=tmp_path / "results")
 
-    assert path == tmp_path / "results" / f"golden_v1_offline_r1_{run_id}.md"
+    assert path == tmp_path / "results" / "golden_v1" / f"golden_v1_offline_r1_{run_id}.md"
     assert "# RAGAS 평가 결과: golden_v1 / offline / 반복 1" in path.read_text(encoding="utf-8")
 
 

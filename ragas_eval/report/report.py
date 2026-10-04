@@ -1,4 +1,4 @@
-# 평가 테이블을 읽어 성적표·모드별 비교를 마크다운으로 results/에 저장
+# 평가 테이블을 읽어 성적표·모드별 비교를 마크다운으로 results/<dataset_version>/에 저장
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from pathlib import Path
@@ -89,7 +89,7 @@ def load_report_data(conn: psycopg.Connection, run_id: UUID) -> ReportData:
 
 
 def report_path(run: Mapping[str, Any], out_dir: Path) -> Path:
-    return out_dir / f"{run['dataset_version']}_{run['mode']}_r{run['repeat_no']}_{run['run_id']}.md"
+    return out_dir / run["dataset_version"] / f"{run['dataset_version']}_{run['mode']}_r{run['repeat_no']}_{run['run_id']}.md"
 
 
 def render(data: ReportData) -> str:
