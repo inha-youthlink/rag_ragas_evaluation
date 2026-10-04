@@ -58,22 +58,21 @@ def rag_payload() -> dict:
         "answer": "만 19세부터 34세까지 신청할 수 있습니다.",
         "policies": [],
         "trace": {
-            "chunks": [
+            "contexts": ["<정책 1> 테스트 청년 정책\n[신청 상태] 상시 모집\n[내용]\n지원 대상: 만 19세 ~ 34세 청년"],
+            "retrieved_chunks": [
                 {
                     "chunk_id": "00000000-0000-0000-0000-000000000001",
                     "policy_no": "TEST-0001",
-                    "chunk_index": 0,
                     "chunk_type": "eligibility",
-                    "content": "지원 대상: 만 19세 ~ 34세 청년",
                     "score": 0.91,
                 },
             ],
-            "latency_ms": 1200,
-            "prompt_tokens": 850,
-            "completion_tokens": 40,
+            "latency_ms": {"retrieve": 300, "policy_lookup": 30, "generate": 860, "total": 1200},
+            "tokens": {"prompt": 850, "completion": 40},
             "chat_model": "test-chat-model",
             "retriever": "vector",
             "top_k": 10,
+            "prompt_version": "generate_v1",
         },
     }
 

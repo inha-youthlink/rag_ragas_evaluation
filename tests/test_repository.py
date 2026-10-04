@@ -51,9 +51,9 @@ def rag_result(rag_payload):
     trace = rag_payload["trace"]
     return RagResult(
         answer=rag_payload["answer"],
-        retrieved_contexts=[c["content"] for c in trace["chunks"]],
-        chunks=trace["chunks"],
-        latency_ms=trace["latency_ms"],
+        retrieved_contexts=trace["contexts"],
+        chunks=[{"content": c} for c in trace["contexts"]],
+        latency_ms=trace["latency_ms"]["total"],
         tokens={"prompt_tokens": 850, "completion_tokens": 40},
         chat_model=trace["chat_model"],
         retriever=trace["retriever"],
@@ -140,9 +140,21 @@ def test_update_answer_stores_rag_result(eval_conn, filled_run, rag_payload):
 
     row = sample_row(eval_conn, filled_run, "single-000001")
     assert row["answer"] == rag_payload["answer"]
-    assert row["contexts"] == rag_payload["trace"]["chunks"]
+    assert row["contexts"] == [{"content": c} for c in rag_payload["trace"]["contexts"]]
     assert row["latency_ms"] == 1200
     assert row["metadata"] == {"tokens": {"prompt_tokens": 850, "completion_tokens": 40}}
+
+
+@pytest.mark.db
+def test_update_answer_keeps_retrieved_chunks_in_metadata(eval_conn, filled_run, rag_payload):
+    retrieved = rag_payload["trace"]["retrieved_chunks"]
+    result = rag_result(rag_payload).model_copy(update={"retrieved_chunks": retrieved})
+
+    update_answer(eval_conn, filled_run, "single-000001", result)
+
+    row = sample_row(eval_conn, filled_run, "single-000001")
+    assert row["metadata"]["retrieved_chunks"] == retrieved
+    assert row["metadata"]["tokens"] == {"prompt_tokens": 850, "completion_tokens": 40}
 
 
 @pytest.mark.db
@@ -305,7 +317,8 @@ def test_load_answers_returns_stored_answer_and_chunks(eval_conn, filled_run, ra
 
     answers = load_answers(eval_conn, filled_run, ["single-000001", "single-000002"])
 
-    assert answers == {"single-000001": (rag_payload["answer"], rag_payload["trace"]["chunks"])}
+    contexts = [{"content": c} for c in rag_payload["trace"]["contexts"]]
+    assert answers == {"single-000001": (rag_payload["answer"], contexts)}
 
 
 @pytest.mark.db

@@ -60,7 +60,7 @@
 | --- | --- |
 | `youthlink-data-pipeline` | 수동 실행, 전체 수집, `policy`·`policy_region`·`policy_eligibility_code`만 적재, 삭제 정책 미반영 |
 | `policy_chunk` | 적재 코드 없음 |
-| `YouthLink_RAG` | `/health`만 존재, 파이프라인·엔드포인트 미구현 |
+| `YouthLink_RAG` | `POST /internal/pipeline` 구현 (가짜 정책으로만 확인), trace 근거 텍스트(`contexts`) 추가 요청 중 |
 | `rag_ragas_evaluation` | 패키지 뼈대, CLI, `config`, `db/ragas_schema.sql`만 존재 |
 
 ## RAGAS 입력
@@ -69,7 +69,7 @@
 | --- | --- | --- | --- |
 | `question` | `user_input` | `TestsetGenerator` `user_input` | 데이터셋 생성 |
 | `ground_truth` | `reference` | `TestsetGenerator` `reference` → 검수 | 데이터셋 생성 |
-| `contexts` | `retrieved_contexts` | RAG `trace.chunks[].content` | 평가 (UPDATE) |
+| `contexts` | `retrieved_contexts` | RAG `trace.contexts` (LLM에 넘긴 근거 블록) | 평가 (UPDATE) |
 | `answer` | `response` | RAG `answer` | 평가 (UPDATE) |
 
 ## 데이터셋 생성
@@ -135,7 +135,7 @@
 | --- | --- | --- | --- |
 | 1 | `ragas_evaluation_run` | INSERT | `run_id`, `dataset_version`, `repeat_no`, 모델 정보, `status = 'RUNNING'` |
 | 2 | `ragas_evaluation_samples` | INSERT (`reviewed = true`) | `sample_id`, `policy_no`, `question`, `ground_truth` |
-| 3 | `ragas_evaluation_samples` | UPDATE (RAG 응답) | `answer`, `contexts`, `latency_ms`, `metadata.tokens` |
+| 3 | `ragas_evaluation_samples` | UPDATE (RAG 응답) | `answer`, `contexts`, `latency_ms`, `metadata.tokens`, `metadata.retrieved_chunks` |
 | 4 | `ragas_evaluation_samples` | UPDATE (채점) | 모드별 지표 (최대 6개), `metadata.errors` |
 | 5 | `ragas_evaluation_run` | UPDATE (집계) | `avg_*`, `sample_count`, `finished_at`, `status` |
 
@@ -158,11 +158,12 @@
 
 | 항목 | 값 |
 | --- | --- |
-| 호출 | `POST {RAG_BASE_URL}/internal/pipeline?debug=true` |
+| 호출 | `POST {RAG_BASE_URL}/internal/pipeline` (trace는 항상 포함) |
 | 요청 | `PipelineInput` = `{question, profile}` |
 | 응답 | `PipelineOutput` = `{answer, policies[], trace}` |
-| `trace` 필수 키 | `chunks` (`chunk_id`, `policy_no`, `chunk_index`, `chunk_type`, `content`, `score`), `latency_ms`, `prompt_tokens`, `completion_tokens`, `chat_model`, `retriever`, `top_k` |
-| `retrieved_contexts` | `[c.content for c in trace.chunks]` (score 내림차순) |
+| `trace` 필수 키 | `contexts` (list[str]), `retrieved_chunks` (`chunk_id`, `policy_no`, `score`, 선택 `content`), `latency_ms.total`, `tokens.prompt`·`tokens.completion`, `chat_model`, `retriever`, `top_k` |
+| `retrieved_contexts` | `trace.contexts` 그대로 (RAG가 LLM에 넘긴 정책별 근거 블록, 검색 순위 순). 청크 본문만이 아니라 신청 상태·방법·서류·기관·링크까지 포함해야 Faithfulness가 정확함 |
+| 저장 | `samples.contexts` = `[{"content": c} for c in trace.contexts]`, `samples.latency_ms` = `latency_ms.total`, `metadata.tokens` = `{prompt_tokens, completion_tokens}`, `metadata.retrieved_chunks` = `trace.retrieved_chunks` 원본 |
 | run 기록 | `trace.chat_model`·`retriever`·`top_k` → `RagResult` → `ragas_evaluation_run.rag_chat_model`·`rag_retriever`·`rag_top_k` |
 
 ## 오프라인 모드 (`run --offline`)
@@ -246,7 +247,7 @@
 | question | TEXT | NOT NULL | | |
 | answer | TEXT | NULL | | |
 | ground_truth | TEXT | NULL | | |
-| contexts | JSONB | NOT NULL | '[]'::jsonb | `trace.chunks` 원본 |
+| contexts | JSONB | NOT NULL | '[]'::jsonb | 채점 근거 `[{"content": ...}]` |
 | context_precision | NUMERIC(4,3) | NULL | | CHECK 0 ~ 1 |
 | context_recall | NUMERIC(4,3) | NULL | | CHECK 0 ~ 1 |
 | faithfulness | NUMERIC(4,3) | NULL | | CHECK 0 ~ 1 |
@@ -271,7 +272,7 @@
 | `ragas_evaluation_run` 분리 + `run_id` FK | 실행 조건 비교, 반복 묶음 |
 | `SERIAL` → `BIGSERIAL` | 행 누적 |
 | `policy_no` 추가 (FK 없음) | 정책별 분석, 정책 변경과 무관하게 보존 |
-| `contexts`에 `trace.chunks` 원본 | 검색 순위·점수 재분석 |
+| `contexts`에 채점 근거, `metadata.retrieved_chunks`에 검색 결과 원본 | 재채점·재개 시 같은 근거 사용, 검색 순위·점수 재분석 |
 | 지표 CHECK 0 ~ 1, NULL 허용 | 채점 실패와 0점 구분 |
 | `latency_ms` 추가 | 응답 속도 집계 |
 | `mode` 컬럼 (`metadata.mode` 대신) | `rag`·`baseline` run 필터·비교 |
@@ -326,7 +327,7 @@
 | --- | --- | --- |
 | `policy_chunk` 청킹·임베딩 적재 | `youthlink-data-pipeline` | 홍용준 |
 | 파이프라인 구현 (`runner`, `retrieval/vector`, `generator`) | `YouthLink_RAG` | 이도경 |
-| `/internal/pipeline` + `debug` trace | `YouthLink_RAG/app/api/internal.py` | 이도경 |
+| `/internal/pipeline` trace (`contexts` 포함) | `YouthLink_RAG/app/api/internal.py` | 이도경 |
 | `load_policies.py` `__main__` 들여쓰기 수정 | `youthlink-data-pipeline` | 홍용준 |
 
 ## 구현 계획
@@ -341,7 +342,7 @@
 | 공유 타입 | 위치 | 사용처 |
 | --- | --- | --- |
 | `GoldenSample` | `dataset/dataset.py` | `generate`, `runner` |
-| `RagResult` (`answer`, `retrieved_contexts`, `chunks`, `latency_ms`, `tokens`, `chat_model`, `retriever`, `top_k`) | `rag_client/rag_client.py` | `baseline_client`, `runner` |
+| `RagResult` (`answer`, `retrieved_contexts`, `chunks`, `retrieved_chunks`, `latency_ms`, `tokens`, `chat_model`, `retriever`, `top_k`) | `rag_client/rag_client.py` | `baseline_client`, `runner` |
 | `ScoreResult` (지표 6개, `errors`) | `scorer/scorer.py` | `runner`, `repository` |
 
 ## 구현 체크리스트

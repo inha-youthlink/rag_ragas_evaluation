@@ -215,13 +215,18 @@ def insert_samples(conn: psycopg.Connection, run_id: UUID, samples: Iterable[Gol
 
 
 def update_answer(conn: psycopg.Connection, run_id: UUID, sample_id: str, result: RagResult) -> None:
+    patch: dict[str, Any] = {}
+    if result.tokens:
+        patch["tokens"] = result.tokens
+    if result.retrieved_chunks:
+        patch["retrieved_chunks"] = result.retrieved_chunks
     params = {
         "run_id": run_id,
         "sample_id": sample_id,
         "answer": result.answer,
         "contexts": Jsonb(result.chunks),
         "latency_ms": result.latency_ms,
-        "patch": Jsonb({"tokens": result.tokens} if result.tokens else {}),
+        "patch": Jsonb(patch),
     }
     _execute_one(conn, UPDATE_ANSWER, params, run_id, sample_id)
 

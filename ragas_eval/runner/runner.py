@@ -97,7 +97,7 @@ def offline_result(sample: GoldenSample) -> RagResult:
 
 
 def contexts_of(chunks: Sequence[Mapping[str, Any]]) -> list[str]:
-    """저장된 contexts(trace.chunks 원본)를 채점 입력으로 되돌린다. rag_client와 같이 score 내림차순."""
+    """저장된 contexts([{"content": ...}])를 채점 입력으로 되돌린다. score가 있으면 내림차순, 없으면 저장 순서."""
     if all("score" in c for c in chunks):
         chunks = sorted(chunks, key=lambda c: c["score"], reverse=True)
     return [c["content"] for c in chunks]

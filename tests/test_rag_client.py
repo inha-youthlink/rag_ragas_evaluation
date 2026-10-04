@@ -10,22 +10,6 @@ from pydantic import ValidationError
 from ragas_eval.rag_client.rag_client import RagResult, call_pipeline
 
 
-def test_rag_payload_values_are_kept(rag_payload):
-    trace = rag_payload["trace"]
-
-    result = RagResult(
-        answer=rag_payload["answer"],
-        retrieved_contexts=[c["content"] for c in trace["chunks"]],
-        chunks=trace["chunks"],
-        latency_ms=trace["latency_ms"],
-        tokens={"prompt_tokens": trace["prompt_tokens"], "completion_tokens": trace["completion_tokens"]},
-    )
-
-    assert result.chunks == trace["chunks"]
-    assert result.latency_ms == trace["latency_ms"]
-    assert result.tokens == {"prompt_tokens": 850, "completion_tokens": 40}
-
-
 def test_rag_settings_are_kept():
     result = RagResult(
         answer="a", retrieved_contexts=[], chunks=[], chat_model="test-chat-model", retriever="vector", top_k=10
@@ -39,6 +23,7 @@ def test_offline_result_has_no_latency_tokens_or_rag_settings():
 
     assert result.latency_ms is None
     assert result.tokens == {}
+    assert result.retrieved_chunks == []
     assert (result.chat_model, result.retriever, result.top_k) == (None, None, None)
 
 
@@ -53,15 +38,18 @@ def test_latency_outside_db_integer_range_fails(latency_ms):
         RagResult(answer="a", retrieved_contexts=[], chunks=[], latency_ms=latency_ms)
 
 
-def chunk(content, score, index=0):
+def chunk(score, index=0, **extra):
     return {
         "chunk_id": f"00000000-0000-0000-0000-00000000000{index}",
         "policy_no": "TEST-0001",
-        "chunk_index": index,
         "chunk_type": "body",
-        "content": content,
         "score": score,
+        **extra,
     }
+
+
+def with_trace(payload, **changes):
+    return {**payload, "trace": {**payload["trace"], **changes}}
 
 
 def call_with(payload, status_code=200, profile=None):
@@ -78,7 +66,7 @@ def call_with(payload, status_code=200, profile=None):
     return asyncio.run(call()), requests
 
 
-def test_call_pipeline_posts_question_and_profile_with_debug(rag_payload):
+def test_call_pipeline_posts_question_and_profile(rag_payload):
     profile = {"age": 25, "region_code": "11000"}
 
     _, requests = call_with(rag_payload, profile=profile)
@@ -86,7 +74,7 @@ def test_call_pipeline_posts_question_and_profile_with_debug(rag_payload):
     (request,) = requests
     assert request.method == "POST"
     assert request.url.path == "/internal/pipeline"
-    assert request.url.params["debug"] == "true"
+    assert not request.url.params
     assert json.loads(request.content) == {"question": "가짜 질문", "profile": profile}
 
 
@@ -102,48 +90,76 @@ def test_call_pipeline_maps_answer_and_trace(rag_payload):
     result, _ = call_with(rag_payload)
 
     assert result.answer == rag_payload["answer"]
-    assert result.retrieved_contexts == ["지원 대상: 만 19세 ~ 34세 청년"]
-    assert result.chunks == trace["chunks"]
+    assert result.retrieved_contexts == trace["contexts"]
+    assert result.chunks == [{"content": c} for c in trace["contexts"]]
+    assert result.retrieved_chunks == trace["retrieved_chunks"]
     assert result.latency_ms == 1200
     assert result.tokens == {"prompt_tokens": 850, "completion_tokens": 40}
     assert (result.chat_model, result.retriever, result.top_k) == ("test-chat-model", "vector", 10)
 
 
-def test_retrieved_contexts_follow_score_desc_and_chunks_keep_original(rag_payload):
-    chunks = [chunk("낮음", 0.2, 1), chunk("높음", 0.9, 2), chunk("중간", 0.5, 3)]
-    payload = {**rag_payload, "trace": {**rag_payload["trace"], "chunks": chunks}}
+def test_contexts_keep_rag_order(rag_payload):
+    payload = with_trace(rag_payload, contexts=["정책 1 근거", "정책 2 근거", "정책 3 근거"])
 
     result, _ = call_with(payload)
 
-    assert result.retrieved_contexts == ["높음", "중간", "낮음"]
-    assert result.chunks == chunks
+    assert result.retrieved_contexts == ["정책 1 근거", "정책 2 근거", "정책 3 근거"]
+
+
+def test_retrieved_chunks_are_kept_as_original_with_optional_content(rag_payload):
+    chunks = [chunk(0.9, 1, content="청크 본문"), chunk(0.5, 2)]
+
+    result, _ = call_with(with_trace(rag_payload, retrieved_chunks=chunks))
+
+    assert result.retrieved_chunks == chunks
 
 
 def test_null_trace_values_are_kept_empty(rag_payload):
-    trace = {**rag_payload["trace"], "chunks": [], "latency_ms": None, "prompt_tokens": None, "top_k": None}
+    payload = with_trace(
+        rag_payload,
+        contexts=[],
+        retrieved_chunks=[],
+        latency_ms={"total": None},
+        tokens={"prompt": None, "completion": 40},
+        top_k=None,
+    )
 
-    result, _ = call_with({**rag_payload, "trace": trace})
+    result, _ = call_with(payload)
 
-    assert result.retrieved_contexts == []
+    assert (result.retrieved_contexts, result.chunks, result.retrieved_chunks) == ([], [], [])
     assert result.latency_ms is None
     assert result.tokens == {"completion_tokens": 40}
     assert result.top_k is None
 
 
-@pytest.mark.parametrize("status_code", [404, 422, 500])
+@pytest.mark.parametrize("status_code", [404, 422, 500, 503])
 def test_http_error_raises(rag_payload, status_code):
     with pytest.raises(httpx.HTTPStatusError):
         call_with(rag_payload, status_code=status_code)
 
 
 @pytest.mark.parametrize(
-    "key", ["chunks", "latency_ms", "prompt_tokens", "completion_tokens", "chat_model", "retriever", "top_k"]
+    "key", ["contexts", "retrieved_chunks", "latency_ms", "tokens", "chat_model", "retriever", "top_k"]
 )
 def test_missing_trace_key_fails(rag_payload, key):
     trace = {k: v for k, v in rag_payload["trace"].items() if k != key}
 
     with pytest.raises(ValueError, match=re.escape(f"trace.{key}:missing")):
         call_with({**rag_payload, "trace": trace})
+
+
+@pytest.mark.parametrize(
+    ("changes", "loc"),
+    [
+        pytest.param({"latency_ms": {"retrieve": 300}}, "trace.latency_ms.total:missing", id="no-total"),
+        pytest.param({"latency_ms": 1200}, "trace.latency_ms:model_type", id="latency-int"),
+        pytest.param({"tokens": {"prompt": 850}}, "trace.tokens.completion:missing", id="no-completion"),
+        pytest.param({"contexts": [None]}, "trace.contexts.0:string_type", id="context-null"),
+    ],
+)
+def test_malformed_trace_fails(rag_payload, changes, loc):
+    with pytest.raises(ValueError, match=re.escape(loc)):
+        call_with(with_trace(rag_payload, **changes))
 
 
 @pytest.mark.parametrize(
@@ -174,34 +190,30 @@ def test_non_json_body_fails():
 
 
 def test_chunk_without_policy_no_fails(rag_payload):
-    bad_chunk = {k: v for k, v in chunk("본문", 0.5).items() if k != "policy_no"}
-    payload = {**rag_payload, "trace": {**rag_payload["trace"], "chunks": [bad_chunk]}}
+    bad_chunk = {k: v for k, v in chunk(0.5).items() if k != "policy_no"}
 
-    with pytest.raises(ValueError, match=r"trace\.chunks\.0\.policy_no:missing"):
+    with pytest.raises(ValueError, match=r"trace\.retrieved_chunks\.0\.policy_no:missing"):
+        call_with(with_trace(rag_payload, retrieved_chunks=[bad_chunk]))
+
+
+def test_invalid_context_fails_without_leaking_values(rag_payload):
+    payload = with_trace(rag_payload, contexts=[{"secret": "비밀-근거"}])
+
+    with pytest.raises(ValueError, match=r"trace\.contexts\.0:string_type") as exc_info:
         call_with(payload)
 
-
-def test_chunk_without_content_fails_without_leaking_values(rag_payload):
-    bad_chunk = {k: v for k, v in chunk("비밀-본문", 0.5).items() if k != "content"}
-    payload = {**rag_payload, "trace": {**rag_payload["trace"], "chunks": [bad_chunk]}}
-
-    with pytest.raises(ValueError, match=r"trace\.chunks\.0\.content:missing") as exc_info:
-        call_with(payload)
-
-    assert "비밀-본문" not in str(exc_info.value)
+    assert "비밀-근거" not in str(exc_info.value)
     assert exc_info.value.__cause__ is None
     assert exc_info.value.__context__ is None
 
 
 @pytest.mark.parametrize(
-    ("key", "value", "loc"),
+    ("changes", "loc"),
     [
-        pytest.param("latency_ms", -1, "trace.latency_ms:greater_than_equal", id="negative-latency"),
-        pytest.param("top_k", 0, "trace.top_k:greater_than_equal", id="zero-top-k"),
+        pytest.param({"latency_ms": {"total": -1}}, "trace.latency_ms.total:greater_than_equal", id="negative-latency"),
+        pytest.param({"top_k": 0}, "trace.top_k:greater_than_equal", id="zero-top-k"),
     ],
 )
-def test_out_of_range_trace_value_fails(rag_payload, key, value, loc):
-    payload = {**rag_payload, "trace": {**rag_payload["trace"], key: value}}
-
+def test_out_of_range_trace_value_fails(rag_payload, changes, loc):
     with pytest.raises(ValueError, match=re.escape(loc)):
-        call_with(payload)
+        call_with(with_trace(rag_payload, **changes))
