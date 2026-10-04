@@ -4,7 +4,7 @@ YouthLink RAG를 RAGAS로 평가합니다. 상세 계획은 `docs/RAGAS_PRD.md`,
 
 ## 설치
 
-Python 3.12 필요 (3.14는 `scikit-network` Windows wheel 없음).
+Python 3.12
 
 ```bash
 py -3.12 -m venv .venv
