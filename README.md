@@ -40,6 +40,19 @@ python -m ragas_eval run --golden datasets/golden_v1.jsonl --baseline --repeat 3
 python -m ragas_eval run --golden datasets/golden_v1.jsonl --resume <run_id>
 ```
 
+`generate` 옵션
+
+| 옵션 | 기본값 | 의미 |
+| --- | --- | --- |
+| `--testset-size` | 100 | 만들 질문·정답 후보 수. 정책을 특정할 수 없는 후보는 빠져서 조금 줄 수 있다. 검수에서 걸러낼 몫을 생각해 목표보다 넉넉히 잡는다 |
+| `--policy-limit` | 없음 (대상 전체) | 생성기에 넣을 정책 수. 대상 정책을 `policy_no` 순으로 정렬한 뒤 고정 시드로 뽑으므로 다시 실행해도 같은 표본이 나온다 |
+| `--out` | `datasets/golden_candidates.jsonl` | 후보 저장 경로. 확정본(`golden_vN.jsonl`)은 덮어쓰지 않는다 |
+
+- 생성 대상: 설명이 있고, 마감(신청기간 구분 0057003)이 아니고, 종료일이 없거나 오늘 이후인 정책
+- 정책 분석(정책당 LLM 약 4회)은 넣은 정책 수만큼 든다. `--policy-limit`을 빼면 대상 전체(로컬 약 970건)를 분석하므로 비용이 크게 는다
+- 질문은 정책당 최대 `testset-size ÷ policy-limit`(올림)건이다. 130 ÷ 150이면 정책당 1건이라 질문이 한 정책에 몰리지 않는다
+- 분석 결과는 `datasets/.cache/`에 저장되어, 같은 정책·모델로 다시 실행하면 분석 비용이 들지 않는다
+
 ## 동작 흐름
 
 데이터셋 생성 → 사람 검수 → 평가 실행 순서다. DB는 `policy`만 읽고, 쓰기는 `repository.py`가 `ragas_evaluation_*` 테이블에만 한다.
