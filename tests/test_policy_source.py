@@ -108,6 +108,91 @@ def test_application_period_line(policy_row, start, end, expected):
     assert period_lines == ([expected] if expected else [])
 
 
+ALL_SIDO = [
+    "서울특별시", "부산광역시", "대구광역시", "인천광역시", "광주광역시", "대전광역시", "울산광역시",
+    "세종특별자치시", "경기도", "강원특별자치도", "충청북도", "충청남도", "전북특별자치도", "전라남도",
+    "경상북도", "경상남도", "제주특별자치도",
+]
+
+
+@pytest.mark.parametrize(
+    ("regions", "expected"),
+    [
+        pytest.param([], None, id="none"),
+        pytest.param([("부산광역시", "부산광역시 금정구")], "지역: 부산광역시 금정구", id="one-sigungu"),
+        pytest.param(
+            [("인천광역시", "인천광역시 중구"), ("인천광역시", "인천광역시 동구"), ("인천광역시", "인천광역시 동구")],
+            "지역: 인천광역시 동구, 인천광역시 중구",
+            id="few-sigungu-dedup",
+        ),
+        pytest.param(
+            [("경기도", f"경기도 테스트{i}시") for i in range(4)], "지역: 경기도", id="many-sigungu-one-sido"
+        ),
+        pytest.param(
+            [("충청남도", "충청남도 천안시"), ("대전광역시", "대전광역시 서구")],
+            "지역: 대전광역시, 충청남도",
+            id="several-sido",
+        ),
+        pytest.param([(sido, f"{sido} 테스트구") for sido in ALL_SIDO], "지역: 전국", id="all-sido"),
+    ],
+)
+def test_region_line(policy_row, regions, expected):
+    lines = build_document(policy_row, regions).page_content.splitlines()
+
+    region_lines = [line for line in lines if line.startswith("지역:")]
+    assert region_lines == ([expected] if expected else [])
+
+
+def test_region_line_follows_support_content(policy_row):
+    lines = build_document(policy_row, [("부산광역시", "부산광역시 금정구")]).page_content.splitlines()
+
+    assert lines[2:5] == ["지원 내용: 월 최대 20만원, 최대 12개월", "지역: 부산광역시 금정구", "지원 연령: 만 19세 ~ 34세"]
+
+
+POLICY_DDL = """
+    CREATE TEMP TABLE policy (
+        policy_no VARCHAR(30) PRIMARY KEY, policy_name VARCHAR(300) NOT NULL,
+        description TEXT, support_content TEXT, min_age INTEGER, max_age INTEGER,
+        income_condition_code VARCHAR(20), min_income BIGINT, max_income BIGINT, income_etc TEXT,
+        application_start_date DATE, application_end_date DATE,
+        application_method TEXT, submission_documents TEXT, screening_method TEXT,
+        additional_qualification TEXT, participation_exclusion TEXT,
+        source_updated_at TIMESTAMPTZ
+    )
+"""
+
+
+def insert_policy(conn, row):
+    insert = sql.SQL("INSERT INTO pg_temp.policy ({}) VALUES ({})").format(
+        sql.SQL(", ").join(map(sql.Identifier, row)),
+        sql.SQL(", ").join(map(sql.Placeholder, row)),
+    )
+    conn.execute(insert, row)
+
+
+@pytest.mark.db
+def test_load_documents_adds_resolved_regions(test_database_url, policy_row):
+    with psycopg.connect(test_database_url) as conn, conn.transaction(force_rollback=True):
+        conn.execute(POLICY_DDL)
+        # 서비스 DB의 v_policy_region_resolved와 같은 이름·컬럼의 임시 테이블 (미해결 코드는 이름이 NULL)
+        conn.execute(
+            "CREATE TEMP TABLE v_policy_region_resolved "
+            "(policy_no VARCHAR(30), sido_name VARCHAR(50), region_name VARCHAR(100))"
+        )
+        insert_policy(conn, {**policy_row, "policy_no": "TEST-LOCAL"})
+        insert_policy(conn, {**policy_row, "policy_no": "TEST-NO-REGION"})
+        conn.execute(
+            "INSERT INTO pg_temp.v_policy_region_resolved VALUES "
+            "('TEST-LOCAL', '부산광역시', '부산광역시 금정구'), ('TEST-LOCAL', NULL, NULL), "
+            "('TEST-OTHER', '서울특별시', '서울특별시 종로구')"
+        )
+
+        documents = load_documents(conn, base_date=date(2026, 10, 2))
+
+    regions = {d.metadata["policy_no"]: [l for l in d.page_content.splitlines() if l.startswith("지역:")] for d in documents}
+    assert regions == {"TEST-LOCAL": ["지역: 부산광역시 금정구"], "TEST-NO-REGION": []}
+
+
 @pytest.mark.db
 def test_load_documents_selects_target_policies_only(test_database_url, policy_row):
     with psycopg.connect(test_database_url) as conn, conn.transaction(force_rollback=True):
