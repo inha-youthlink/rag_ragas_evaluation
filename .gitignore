@@ -14,3 +14,7 @@ datasets/.cache/
 
 # report 성적표 (로컬 결과물)
 results/
+
+# 로컬 작업 문서 (저장소에 올리지 않음)
+docs/pr.md
+docs/golden_v1/
