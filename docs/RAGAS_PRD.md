@@ -60,8 +60,8 @@
 | --- | --- |
 | `youthlink-data-pipeline` | 수동 실행, 전체 수집, `policy`·`policy_region`·`policy_eligibility_code`만 적재, 삭제 정책 미반영 |
 | `policy_chunk` | 적재 코드 없음 |
-| `YouthLink_RAG` | `POST /internal/pipeline` 구현 (가짜 정책으로만 확인), trace 근거 텍스트(`contexts`) 추가 요청 중 |
-| `rag_ragas_evaluation` | 패키지 뼈대, CLI, `config`, `db/ragas_schema.sql`만 존재 |
+| `YouthLink_RAG` | `POST /internal/pipeline` 구현, `?debug=true`의 `trace.contexts`·`retrieved_chunks` 반영 완료 (PR #15). 가짜 정책으로만 확인, 실제 `policy_chunk` 적재 대기 |
+| `rag_ragas_evaluation` | `generate`, `run`(`rag`·`baseline`·`offline`, 재개), `report` 구현. `golden_v0`(시험용 10건)으로 offline·baseline 측정 완료, rag 모드는 실제 데이터 대기 |
 
 ## RAGAS 입력
 
