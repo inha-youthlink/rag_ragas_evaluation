@@ -368,17 +368,35 @@ def test_align_persona_example_names_uses_input_names_as_answer_keys():
     assert example_output.mapping == {"인사 관리자": ["포용성"], "원격 팀 리더": ["원격 근무"]}
 
 
-def test_korean_synthesizer_aligns_matching_example_after_adaptation(monkeypatch):
+def adapted_korean_synthesizer(monkeypatch):
+    from ragas.testset.synthesizers.single_hop.prompts import QueryAnswerGenerationPrompt
+
     async def fake_adapt(self, language, llm):
-        return {"themes_personas_matching_prompt": half_translated_matching_prompt()}
+        return {
+            "themes_personas_matching_prompt": half_translated_matching_prompt(),
+            "query_answer_generation_prompt": QueryAnswerGenerationPrompt(),
+        }
 
     monkeypatch.setattr(generate.TolerantSingleHopSynthesizer, "adapt_prompts", fake_adapt)
     monkeypatch.setattr(generate, "make_llm", lambda model, client: None)
+    return asyncio.run(generate._korean_synthesizer("test-key", "gen-model"))
 
-    synthesizer = asyncio.run(generate._korean_synthesizer("test-key", "gen-model"))
+
+def test_korean_synthesizer_aligns_matching_example_after_adaptation(monkeypatch):
+    synthesizer = adapted_korean_synthesizer(monkeypatch)
 
     ((_, example_output),) = synthesizer.theme_persona_matching_prompt.examples
     assert list(example_output.mapping) == ["인사 관리자", "원격 팀 리더"]
+
+
+def test_korean_synthesizer_adds_eligibility_instruction_once(monkeypatch):
+    from ragas.testset.synthesizers.single_hop.prompts import QueryAnswerGenerationPrompt
+
+    synthesizer = adapted_korean_synthesizer(monkeypatch)
+
+    instruction = synthesizer.generate_query_reference_prompt.instruction
+    assert instruction.startswith(QueryAnswerGenerationPrompt().instruction)
+    assert instruction.count(generate.ELIGIBILITY_INSTRUCTION) == 1
 
 
 # ---- 분석(지식 그래프) 캐시 ----

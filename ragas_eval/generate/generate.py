@@ -42,6 +42,12 @@ KG_CACHE_DIR = Path("datasets/.cache")
 CONFIRMED_DATASET = re.compile(r"golden_v\d+\.jsonl", re.IGNORECASE)
 # 정책 표본 시드. 정책 목록이 같으면 항상 같은 표본이 나와 분석 캐시를 다시 쓸 수 있다
 SAMPLE_SEED = 20261010
+# ragas 질문·정답 생성 프롬프트(영어 지시문)에 덧붙이는 대상 여부 지시
+ELIGIBILITY_INSTRUCTION = (
+    "4. **Eligibility**: If the persona does not appear to meet the target or eligibility conditions stated in "
+    "the context (for example, a startup founder asking about a program for unemployed youth), begin the answer "
+    "by stating, using only the context, whether the persona is eligible and why. Then answer the rest of the query.\n"
+)
 # ragas가 정책 내용으로 페르소나를 만들면 이름이 어긋나거나 말투가 어색해(golden_v0) 청년정책 사용자로 고정한다
 YOUTH_PERSONAS = (
     Persona(
@@ -256,8 +262,18 @@ async def _korean_synthesizer(api_key: str, model: str) -> TolerantSingleHopSynt
         prompts = await synthesizer.adapt_prompts(LANGUAGE, llm=llm)
         matching = prompts["themes_personas_matching_prompt"]
         prompts["themes_personas_matching_prompt"] = align_persona_example_names(matching)
+        query_answer = prompts["query_answer_generation_prompt"]
+        prompts["query_answer_generation_prompt"] = add_eligibility_instruction(query_answer)
         synthesizer.set_prompts(**prompts)
     return synthesizer
+
+
+def add_eligibility_instruction(prompt):
+    """페르소나가 정책 대상이 아닌데(예: 창업자 + 미취업자 사업) 정답이 대상 여부를 말하지 않으면,
+    이를 짚는 RAG 답변이 오히려 감점된다(golden_v1 피드백). 정답이 대상 여부부터 밝히도록 지시를 덧붙인다."""
+    if ELIGIBILITY_INSTRUCTION not in prompt.instruction:
+        prompt.instruction = prompt.instruction + ELIGIBILITY_INSTRUCTION
+    return prompt
 
 
 def align_persona_example_names(prompt):
