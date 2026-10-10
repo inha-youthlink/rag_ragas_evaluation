@@ -1,5 +1,5 @@
 ---
-name: golden-dataset-review
+name: ragas-dataset-review
 description: generate로 만든 데이터셋 후보(datasets/golden_candidates.jsonl)를 정책 원문과 대조해 1차 검토하고, 사용자 승인 후 golden_vN.jsonl로 확정하는 절차와 판정 기준. 후보 검토·검수표 작성·의심 샘플 표시·golden 확정을 요청받을 때, 팀원 검토 의견을 판정 기준에 반영할 때 사용한다.
 ---
 
