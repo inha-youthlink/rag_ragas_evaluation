@@ -19,10 +19,13 @@ DETAIL_FIELDS = {
     "additional_qualification": "추가 자격",
     "participation_exclusion": "참여 제한",
 }
+# 온통청년 earnCndSeCd. 연소득 금액(min_income·max_income)의 단위는 만원이고, 0은 해당 경계 없음
+INCOME_ANY = "0043001"
+INCOME_ANNUAL = "0043002"
 
 SELECT_TARGET_POLICIES = """
     SELECT policy_no, policy_name, description, support_content,
-           min_age, max_age, min_income, max_income, income_etc,
+           min_age, max_age, income_condition_code, min_income, max_income, income_etc,
            application_start_date, application_end_date,
            application_method, submission_documents, screening_method,
            additional_qualification, participation_exclusion,
@@ -44,7 +47,7 @@ def build_document(row: Mapping[str, Any]) -> Document:
     lines = [
         *_text_lines(row, TEXT_FIELDS),
         _age_line(row["min_age"], row["max_age"]),
-        _income_line(row["min_income"], row["max_income"], _clean(row["income_etc"])),
+        _income_line(row["income_condition_code"], row["min_income"], row["max_income"], _clean(row["income_etc"])),
         _period_line(row["application_start_date"], row["application_end_date"]),
         *_text_lines(row, DETAIL_FIELDS),
     ]
@@ -88,17 +91,26 @@ def _age(value: int | None) -> str | None:
     return f"만 {value}세" if value is not None else None
 
 
-def _income_line(min_income: int | None, max_income: int | None, income_etc: str | None) -> str | None:
-    amount = _range(_won(min_income), _won(max_income))
-    if amount and income_etc:
-        return f"소득 기준: {amount} ({income_etc})"
-    if amount or income_etc:
-        return f"소득 기준: {amount or income_etc}"
+def _income_line(
+    code: str | None, min_income: int | None, max_income: int | None, income_etc: str | None
+) -> str | None:
+    # API가 비어 있는 설명을 "-"로 채운 경우가 있다
+    income_etc = income_etc if income_etc and income_etc.strip("- ") else None
+    base = None
+    if code == INCOME_ANY:
+        base = "무관"
+    elif code == INCOME_ANNUAL:
+        amount = _range(_manwon(min_income), _manwon(max_income))
+        base = f"연소득 {amount}" if amount else None
+    if base and income_etc:
+        return f"소득 기준: {base} ({income_etc})"
+    if base or income_etc:
+        return f"소득 기준: {base or income_etc}"
     return None
 
 
-def _won(value: int | None) -> str | None:
-    return f"{value}원" if value is not None else None
+def _manwon(value: int | None) -> str | None:
+    return f"{value:,}만원" if value else None
 
 
 def _period_line(start: date | None, end: date | None) -> str | None:

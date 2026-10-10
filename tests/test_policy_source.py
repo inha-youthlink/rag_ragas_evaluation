@@ -16,7 +16,7 @@ def test_document_lines_follow_fixed_order(policy_row):
         "정책 설명: 청년의 월세 부담을 줄이기 위한 가짜 정책",
         "지원 내용: 월 최대 20만원, 최대 12개월",
         "지원 연령: 만 19세 ~ 34세",
-        "소득 기준: 30000000원 이하",
+        "소득 기준: 연소득 3,000만원 이하",
         "신청 기간: 2026-01-01 ~ 2026-12-31",
         "신청 방법: 온라인 신청",
         "제출 서류: 임대차계약서, 주민등록등본",
@@ -62,18 +62,30 @@ def test_age_range_line(policy_row, min_age, max_age, expected):
 
 
 @pytest.mark.parametrize(
-    ("min_income", "max_income", "income_etc", "expected"),
+    ("code", "min_income", "max_income", "income_etc", "expected"),
     [
-        (10000000, 30000000, None, "소득 기준: 10000000원 ~ 30000000원"),
-        (10000000, None, None, "소득 기준: 10000000원 이상"),
-        (None, 30000000, "중위소득 150% 이하", "소득 기준: 30000000원 이하 (중위소득 150% 이하)"),
-        (None, None, "중위소득 150% 이하", "소득 기준: 중위소득 150% 이하"),
-        (None, 0, None, "소득 기준: 0원 이하"),
-        (None, None, None, None),
+        pytest.param("0043001", 0, 0, None, "소득 기준: 무관", id="any"),
+        pytest.param("0043001", None, None, None, "소득 기준: 무관", id="any-null-amount"),
+        pytest.param("0043002", 0, 5000, None, "소득 기준: 연소득 5,000만원 이하", id="annual-max"),
+        pytest.param("0043002", 2515, 9999, None, "소득 기준: 연소득 2,515만원 ~ 9,999만원", id="annual-range"),
+        pytest.param("0043002", 4000, 0, None, "소득 기준: 연소득 4,000만원 이상", id="annual-min"),
+        pytest.param("0043002", 0, 6000, "부부합산", "소득 기준: 연소득 6,000만원 이하 (부부합산)", id="annual-etc"),
+        pytest.param("0043002", 0, 0, "중위소득 150% 이하", "소득 기준: 중위소득 150% 이하", id="annual-no-amount"),
+        pytest.param("0043002", 0, 0, None, None, id="annual-empty"),
+        pytest.param("0043003", 0, 0, "중위소득 150% 이하", "소득 기준: 중위소득 150% 이하", id="etc"),
+        pytest.param("0043003", 0, 0, None, None, id="etc-empty"),
+        pytest.param("0043003", 0, 0, "-", None, id="etc-dash-only"),
+        pytest.param(None, 0, 3000, None, None, id="unknown-code-ignores-amount"),
     ],
 )
-def test_income_line(policy_row, min_income, max_income, income_etc, expected):
-    row = {**policy_row, "min_income": min_income, "max_income": max_income, "income_etc": income_etc}
+def test_income_line(policy_row, code, min_income, max_income, income_etc, expected):
+    row = {
+        **policy_row,
+        "income_condition_code": code,
+        "min_income": min_income,
+        "max_income": max_income,
+        "income_etc": income_etc,
+    }
 
     income_lines = [line for line in build_document(row).page_content.splitlines() if line.startswith("소득 기준:")]
 
@@ -104,7 +116,7 @@ def test_load_documents_selects_target_policies_only(test_database_url, policy_r
             CREATE TEMP TABLE policy (
                 policy_no VARCHAR(30) PRIMARY KEY, policy_name VARCHAR(300) NOT NULL,
                 description TEXT, support_content TEXT, min_age INTEGER, max_age INTEGER,
-                min_income BIGINT, max_income BIGINT, income_etc TEXT,
+                income_condition_code VARCHAR(20), min_income BIGINT, max_income BIGINT, income_etc TEXT,
                 application_start_date DATE, application_end_date DATE,
                 application_method TEXT, submission_documents TEXT, screening_method TEXT,
                 additional_qualification TEXT, participation_exclusion TEXT,
