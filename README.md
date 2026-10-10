@@ -22,9 +22,8 @@ psql -d youthlink -f db/ragas_schema.sql
 ## 실행
 
 ```bash
-# DB policy 읽기 → 질문·정답 후보 100건 생성 → datasets/에 저장 (검수 후 golden_v1.jsonl로 확정)
-python -m ragas_eval generate --testset-size 100 --out datasets/golden_candidates.jsonl
-# 정책을 고정 시드로 150건만 뽑아 생성 (분석 비용 제한)
+# DB policy에서 생성 대상 정책을 고정 시드로 150건 뽑아 분석 → 질문·정답 후보 130건 생성
+# → datasets/golden_candidates.jsonl 저장 (검수로 100건을 골라 golden_vN.jsonl로 확정)
 python -m ragas_eval generate --testset-size 130 --policy-limit 150
 
 # 확정 데이터셋으로 RAG 호출 → 채점 → 결과 DB 저장, 3회 반복
@@ -39,6 +38,23 @@ python -m ragas_eval run --golden datasets/golden_v1.jsonl --baseline --repeat 3
 # 응답 실패·중단으로 RUNNING에 남은 run을 미완료 샘플만 이어서 실행 (같은 모드 옵션 함께 지정)
 python -m ragas_eval run --golden datasets/golden_v1.jsonl --resume <run_id>
 ```
+
+`generate` 옵션
+
+| 옵션 | 기본값 | 의미 |
+| --- | --- | --- |
+| `--testset-size` | 100 | 만들 질문·정답 후보 수. 정책을 특정할 수 없는 후보는 빠져서 조금 줄 수 있다. 검수에서 걸러낼 몫을 생각해 목표보다 넉넉히 잡는다 |
+| `--policy-limit` | 없음 (대상 전체) | 생성기에 넣을 정책 수. 대상 정책을 `policy_no` 순으로 정렬한 뒤 고정 시드로 뽑으므로 다시 실행해도 같은 표본이 나온다 |
+| `--out` | `datasets/golden_candidates.jsonl` | 후보 저장 경로. 확정본(`golden_vN.jsonl`)은 덮어쓰지 않는다 |
+
+- 생성 대상: 설명이 있고, 마감(신청기간 구분 0057003)이 아니고, 종료일이 없거나 오늘 이후인 정책
+- 정책 분석(정책당 LLM 약 4회)은 넣은 정책 수만큼 든다. `--policy-limit`을 빼면 대상 전체(로컬 약 970건)를 분석하므로 비용이 크게 는다
+- 질문은 정책당 최대 `testset-size ÷ policy-limit`(올림)건이다. 130 ÷ 150이면 정책당 1건이라 질문이 한 정책에 몰리지 않는다
+- 분석 결과는 `datasets/.cache/`에 저장되어, 같은 정책·모델로 다시 실행하면 분석 비용이 들지 않는다
+
+후보 검수는 Claude Code skill `ragas-dataset-review`(`.claude/skills/ragas-dataset-review/SKILL.md`)로 한다.
+Claude Code에서 "golden_candidates 검수해줘"처럼 요청하면 후보를 정책 원문과 전수 대조해 검수표(`docs/golden_vN/review.md`, 로컬 전용)를 만들고,
+사용자가 제외 목록을 승인하면 `datasets/golden_vN.jsonl`로 확정한다. 판정 기준(모호한 질문, 정답 불일치, 페르소나 불일치, 시점 의존, 동명 정책 등)은 skill 문서에 있다.
 
 ## 동작 흐름
 

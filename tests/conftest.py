@@ -27,6 +27,7 @@ def policy_row() -> dict:
         "min_income": 0,
         "max_income": 3000,
         "income_etc": None,
+        "application_period_type_code": "0057001",
         "application_start_date": date(2026, 1, 1),
         "application_end_date": date(2026, 12, 31),
         "application_method": "온라인 신청",
