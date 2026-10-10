@@ -27,6 +27,9 @@ INCOME_ANNUAL = "0043002"
 # 온통청년 aplyPrdSeCd. 마감 정책은 종료일이 비어 있어 종료일만으로는 미마감과 구분되지 않는다
 APPLY_ALWAYS = "0057002"
 APPLY_CLOSED = "0057003"
+# API가 연령 제한 없음을 하한 1세(1~99세 등)·상한 99세 이상(99, 100, 999세 등)으로 채운 경우가 있어 경계 없음으로 본다
+NO_MIN_AGE = 1
+NO_MAX_AGE = 99
 # 정책 지역 코드를 현재 시도·시군구 이름으로 해석한 조회용 View (youthlink-data-pipeline 지역 ETL).
 # 미해결 코드(UNRESOLVED)는 이름이 NULL이라 제외한다
 REGION_VIEW = "v_policy_region_resolved"
@@ -127,6 +130,8 @@ def _region_line(regions: Sequence[tuple[str, str]]) -> str | None:
 
 
 def _age_line(min_age: int | None, max_age: int | None) -> str | None:
+    min_age = None if min_age is not None and min_age <= NO_MIN_AGE else min_age
+    max_age = None if max_age is not None and max_age >= NO_MAX_AGE else max_age
     if min_age is not None and max_age is not None:
         return f"지원 연령: 만 {min_age}세 ~ {max_age}세"
     age = _range(_age(min_age), _age(max_age))

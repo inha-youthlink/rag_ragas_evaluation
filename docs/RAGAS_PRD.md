@@ -77,7 +77,7 @@
 | 항목 | 값 |
 | --- | --- |
 | 대상 | `description` 비어 있지 않음(NULL·공백 제외), `application_period_type_code`가 마감(0057003) 아님(마감 정책은 종료일이 비어 있음), `application_end_date` NULL 또는 기준일 당일 이후 |
-| 원천 텍스트 | `policy_name`, `description`, `support_content`, 지역(`v_policy_region_resolved`의 시도·시군구 이름. 시군구 3곳까지 나열, 넘으면 시도, 17개 시도 전부면 "전국". View가 없으면 생략), `min_age`/`max_age`, `income_condition_code`(무관 / 연소득 `min_income`~`max_income` 만원 / 기타 `income_etc`), `application_start_date`/`application_end_date`(상시 0057002면 "상시"), `application_method`, `submission_documents`, `screening_method`, `additional_qualification`, `participation_exclusion` |
+| 원천 텍스트 | `policy_name`, `description`, `support_content`, 지역(`v_policy_region_resolved`의 시도·시군구 이름. 시군구 3곳까지 나열, 넘으면 시도, 17개 시도 전부면 "전국". View가 없으면 생략), `min_age`/`max_age`(하한 1세 이하·상한 99세 이상은 API가 채운 "제한 없음" 값으로 보고 생략), `income_condition_code`(무관 / 연소득 `min_income`~`max_income` 만원 / 기타 `income_etc`), `application_start_date`/`application_end_date`(상시 0057002면 "상시"), `application_method`, `submission_documents`, `screening_method`, `additional_qualification`, `participation_exclusion` |
 | 입력 변환 | 정책 1건 → `Document` 1개 (`metadata`: `policy_no`, `source_updated_at`) |
 | 정책 표본 | `--policy-limit N`: 정책 번호순 정렬 후 고정 시드로 N건 추출 (분석 비용 제한, 재실행 시 같은 표본 → 분석 캐시 재사용) |
 | 페르소나 | 청년정책 사용자 5명 고정 (대학생, 취업준비생, 사회초년생, 청년 창업자, 신혼부부 청년) |

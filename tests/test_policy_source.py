@@ -50,8 +50,15 @@ def test_empty_text_column_is_omitted(policy_row, value):
         (19, 34, "지원 연령: 만 19세 ~ 34세"),
         (19, None, "지원 연령: 만 19세 이상"),
         (None, 34, "지원 연령: 만 34세 이하"),
-        (0, None, "지원 연령: 만 0세 이상"),
         (None, None, None),
+        (15, 75, "지원 연령: 만 15세 ~ 75세"),
+        # API가 연령 제한 없음을 하한 1세 이하, 상한 99세 이상으로 채운 값
+        (0, None, None),
+        (1, 99, None),
+        (18, 100, "지원 연령: 만 18세 이상"),
+        (19, 999, "지원 연령: 만 19세 이상"),
+        (1, 39, "지원 연령: 만 39세 이하"),
+        (2, 98, "지원 연령: 만 2세 ~ 98세"),
     ],
 )
 def test_age_range_line(policy_row, min_age, max_age, expected):
