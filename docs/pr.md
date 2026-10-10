@@ -101,13 +101,37 @@ def sample_documents(documents, limit):
 | 이름 | LLM이 이름을 변형해 답해 불일치 발생 | 고정 이름 5개 |
 | 전달 방식 | 없음 (생성기 기본값) | `TestsetGenerator(persona_list=…)`, `generate(num_personas=5)` |
 
-| 페르소나 | 관심사 |
+### 지정한 페르소나 5개
+
+`ragas_eval/generate/generate.py`의 `YOUTH_PERSONAS`에 ragas `Persona(name, role_description)`로 정의했다.
+
+| name | role_description |
 | --- | --- |
-| 대학생 | 장학금, 주거, 교육 지원의 자격과 금액 |
-| 취업준비생 | 취업 지원, 직업 훈련, 구직활동 지원금과 신청 방법 |
-| 사회초년생 | 월세, 자산 형성, 대출 지원과 소득 기준 |
-| 청년 창업자 | 창업 자금, 임차료, 교육·컨설팅 지원 |
-| 신혼부부 청년 | 전세·주택 대출과 월세 지원의 조건과 규모 |
+| 대학생 | 20대 초반 대학생. 장학금, 주거, 교육 지원 정책의 신청 자격과 지원 금액을 알고 싶어 한다. |
+| 취업준비생 | 구직 중인 20대 후반 청년. 취업 지원, 직업 훈련, 구직활동 지원금을 찾고 신청 방법을 묻는다. |
+| 사회초년생 | 입사 1~2년 차 직장인. 월세, 자산 형성, 대출 지원 정책과 소득 기준 충족 여부를 확인하려 한다. |
+| 청년 창업자 | 창업을 준비하거나 사업을 운영하는 30대 초반 청년. 창업 자금, 임차료, 교육·컨설팅 지원을 찾는다. |
+| 신혼부부 청년 | 결혼한 지 얼마 안 된 30대 청년. 전세·주택 대출과 월세 지원의 조건과 지원 규모를 비교한다. |
+
+```python
+generator = TestsetGenerator(
+    llm=llm, embedding_model=embeddings, knowledge_graph=kg, persona_list=list(YOUTH_PERSONAS)
+)
+testset = generator.generate(
+    testset_size=testset_size,
+    query_distribution=[(synthesizer, 1.0)],
+    num_personas=len(YOUTH_PERSONAS),
+)
+```
+
+### 생성 중 쓰이는 방식 (ragas 내부)
+
+| 단계 | 내용 |
+| --- | --- |
+| 매칭 | LLM이 정책마다 관심 가질 페르소나를 고름 (예: 주거 정책 → 사회초년생, 신혼부부 청년) |
+| 질문 생성 | 매칭된 페르소나의 관점과 말투로 질문 작성 |
+| 이름 보정 | LLM이 "대학생 (20대)"처럼 이름을 바꿔 답해도 `resolve_persona_name`이 원래 이름으로 되돌림 |
+| 분포 | 매칭 결과에 따라 정해지므로 5명이 균등하게 쓰인다는 보장은 없음. 생성 후 페르소나별 건수를 확인 |
 
 한계: 페르소나는 질문의 말투와 관점만 바꾼다. 질문과 정답이 서로 다른 사업을 가리키는 문제(golden_v0 5번)는 검수에서 거른다.
 
