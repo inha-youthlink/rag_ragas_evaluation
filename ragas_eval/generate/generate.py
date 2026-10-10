@@ -18,6 +18,7 @@ from ragas.embeddings import OpenAIEmbeddings
 from ragas.testset import TestsetGenerator
 from ragas.testset.graph import KnowledgeGraph, Node, NodeType
 from ragas.testset.persona import Persona
+from ragas.testset.synthesizers.prompts import PersonaThemesMapping
 from ragas.testset.synthesizers.single_hop.specific import SingleHopSpecificQuerySynthesizer
 from ragas.testset.transforms import apply_transforms, default_transforms
 
@@ -175,7 +176,7 @@ def resolve_persona_name(name: str, names: set[str]) -> str | None:
 
 class TolerantSingleHopSynthesizer(SingleHopSpecificQuerySynthesizer):
     """ragas는 페르소나 이름이 정확히 같아야 찾고, 다르면 KeyError로 생성 전체가 멈춘다.
-    이름을 보정하고 끝내 못 찾은 페르소나만 건너뛴다."""
+    이름을 보정하고 끝내 못 찾은 페르소나만 건너뛴다. 하나도 못 찾으면 정책이 통째로 빠지므로 전원을 후보로 둔다."""
 
     def prepare_combinations(
         self, node: Node, terms: list[str], personas: list[Persona], persona_concepts: dict[str, list[str]]
@@ -185,9 +186,12 @@ class TolerantSingleHopSynthesizer(SingleHopSpecificQuerySynthesizer):
         for name, concepts in persona_concepts.items():
             matched = resolve_persona_name(name, names)
             if matched is None:
-                logger.warning("페르소나 이름을 찾지 못해 건너뜀")
+                logger.warning("페르소나 이름을 찾지 못해 건너뜀: %s", name)
                 continue
             resolved.setdefault(matched, []).extend(concepts)
+        if not resolved:
+            logger.warning("일치하는 페르소나가 없어 전원을 후보로 둠")
+            resolved = {p.name: list(terms) for p in personas}
         return super().prepare_combinations(node, terms, personas, resolved)
 
 
@@ -250,5 +254,21 @@ async def _korean_synthesizer(api_key: str, model: str) -> TolerantSingleHopSynt
         llm = make_llm(model, client)
         synthesizer = TolerantSingleHopSynthesizer(llm=llm)
         prompts = await synthesizer.adapt_prompts(LANGUAGE, llm=llm)
+        matching = prompts["themes_personas_matching_prompt"]
+        prompts["themes_personas_matching_prompt"] = align_persona_example_names(matching)
         synthesizer.set_prompts(**prompts)
     return synthesizer
+
+
+def align_persona_example_names(prompt):
+    """ragas 한국어 변환은 예시 입력의 페르소나 이름만 번역하고 답변 키는 영어로 둔다.
+    LLM이 이를 따라 우리 이름을 영어로 바꿔 답하므로(golden_v1 생성 130건 중 14건) 답변 키를 입력 이름으로 맞춘다."""
+    aligned = []
+    for example_input, example_output in prompt.examples:
+        names = [p.name for p in example_input.personas]
+        concepts = list(example_output.mapping.values())
+        if len(names) == len(concepts):
+            example_output = PersonaThemesMapping(mapping=dict(zip(names, concepts)))
+        aligned.append((example_input, example_output))
+    prompt.examples = aligned
+    return prompt

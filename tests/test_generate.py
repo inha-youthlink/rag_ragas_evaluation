@@ -323,6 +323,64 @@ def test_tolerant_synthesizer_keeps_matched_and_skips_unknown_personas():
     assert synthesizer.name == "single_hop_specific_query_synthesizer"
 
 
+def test_tolerant_synthesizer_uses_all_personas_when_no_name_matches():
+    from ragas.testset.graph import Node, NodeType
+    from ragas.testset.persona import Persona
+
+    personas = [Persona(name="대학생", role_description="대학생"), Persona(name="취업준비생", role_description="구직자")]
+    concepts = {"University Student": ["월세"], "Job Seeker": ["월세"]}
+    synthesizer = generate.TolerantSingleHopSynthesizer(llm=None)
+
+    (sample,) = synthesizer.prepare_combinations(Node(type=NodeType.CHUNK), ["월세"], personas, concepts)
+
+    assert [p.name for p in sample["personas"]] == ["대학생", "취업준비생"]
+
+
+def half_translated_matching_prompt():
+    from ragas.testset.persona import Persona
+    from ragas.testset.synthesizers.prompts import (
+        PersonaThemesMapping,
+        ThemesPersonasInput,
+        ThemesPersonasMatchingPrompt,
+    )
+
+    # ragas 한국어 변환 결과(진단으로 확인): 입력 이름만 번역되고 답변 키는 영어로 남는다
+    prompt = ThemesPersonasMatchingPrompt()
+    prompt.examples = [
+        (
+            ThemesPersonasInput(
+                themes=["포용성", "원격 근무"],
+                personas=[
+                    Persona(name="인사 관리자", role_description="포용성에 집중"),
+                    Persona(name="원격 팀 리더", role_description="원격 팀 관리"),
+                ],
+            ),
+            PersonaThemesMapping(mapping={"HR Manager": ["포용성"], "Remote Team Lead": ["원격 근무"]}),
+        )
+    ]
+    return prompt
+
+
+def test_align_persona_example_names_uses_input_names_as_answer_keys():
+    prompt = generate.align_persona_example_names(half_translated_matching_prompt())
+
+    ((_, example_output),) = prompt.examples
+    assert example_output.mapping == {"인사 관리자": ["포용성"], "원격 팀 리더": ["원격 근무"]}
+
+
+def test_korean_synthesizer_aligns_matching_example_after_adaptation(monkeypatch):
+    async def fake_adapt(self, language, llm):
+        return {"themes_personas_matching_prompt": half_translated_matching_prompt()}
+
+    monkeypatch.setattr(generate.TolerantSingleHopSynthesizer, "adapt_prompts", fake_adapt)
+    monkeypatch.setattr(generate, "make_llm", lambda model, client: None)
+
+    synthesizer = asyncio.run(generate._korean_synthesizer("test-key", "gen-model"))
+
+    ((_, example_output),) = synthesizer.theme_persona_matching_prompt.examples
+    assert list(example_output.mapping) == ["인사 관리자", "원격 팀 리더"]
+
+
 # ---- 분석(지식 그래프) 캐시 ----
 
 
