@@ -93,15 +93,18 @@ def test_income_line(policy_row, code, min_income, max_income, income_etc, expec
 
 
 @pytest.mark.parametrize(
-    ("start", "end", "expected"),
+    ("code", "start", "end", "expected"),
     [
-        (date(2026, 1, 1), None, "신청 기간: 2026-01-01 ~"),
-        (None, date(2026, 12, 31), "신청 기간: ~ 2026-12-31"),
-        (None, None, None),
+        ("0057001", date(2026, 1, 1), None, "신청 기간: 2026-01-01 ~"),
+        ("0057001", None, date(2026, 12, 31), "신청 기간: ~ 2026-12-31"),
+        ("0057001", None, None, None),
+        ("0057002", None, None, "신청 기간: 상시"),
+        ("0057002", date(2026, 1, 1), None, "신청 기간: 상시"),
+        (None, None, None, None),
     ],
 )
-def test_application_period_line(policy_row, start, end, expected):
-    row = {**policy_row, "application_start_date": start, "application_end_date": end}
+def test_application_period_line(policy_row, code, start, end, expected):
+    row = {**policy_row, "application_period_type_code": code, "application_start_date": start, "application_end_date": end}
 
     period_lines = [line for line in build_document(row).page_content.splitlines() if line.startswith("신청 기간:")]
 
@@ -154,7 +157,7 @@ POLICY_DDL = """
         policy_no VARCHAR(30) PRIMARY KEY, policy_name VARCHAR(300) NOT NULL,
         description TEXT, support_content TEXT, min_age INTEGER, max_age INTEGER,
         income_condition_code VARCHAR(20), min_income BIGINT, max_income BIGINT, income_etc TEXT,
-        application_start_date DATE, application_end_date DATE,
+        application_period_type_code VARCHAR(30), application_start_date DATE, application_end_date DATE,
         application_method TEXT, submission_documents TEXT, screening_method TEXT,
         additional_qualification TEXT, participation_exclusion TEXT,
         source_updated_at TIMESTAMPTZ
@@ -196,19 +199,7 @@ def test_load_documents_adds_resolved_regions(test_database_url, policy_row):
 @pytest.mark.db
 def test_load_documents_selects_target_policies_only(test_database_url, policy_row):
     with psycopg.connect(test_database_url) as conn, conn.transaction(force_rollback=True):
-        conn.execute(
-            """
-            CREATE TEMP TABLE policy (
-                policy_no VARCHAR(30) PRIMARY KEY, policy_name VARCHAR(300) NOT NULL,
-                description TEXT, support_content TEXT, min_age INTEGER, max_age INTEGER,
-                income_condition_code VARCHAR(20), min_income BIGINT, max_income BIGINT, income_etc TEXT,
-                application_start_date DATE, application_end_date DATE,
-                application_method TEXT, submission_documents TEXT, screening_method TEXT,
-                additional_qualification TEXT, participation_exclusion TEXT,
-                source_updated_at TIMESTAMPTZ
-            )
-            """
-        )
+        conn.execute(POLICY_DDL)
         rows = [
             {**policy_row, "policy_no": "TEST-OPEN", "application_end_date": date(2026, 12, 31)},
             {**policy_row, "policy_no": "TEST-NO-END", "application_end_date": None},
@@ -216,14 +207,18 @@ def test_load_documents_selects_target_policies_only(test_database_url, policy_r
             {**policy_row, "policy_no": "TEST-CLOSED", "application_end_date": date(2026, 10, 1)},
             {**policy_row, "policy_no": "TEST-NO-DESC", "description": None},
             {**policy_row, "policy_no": "TEST-BLANK-DESC", "description": "   "},
+            # 온통청년 마감(0057003) 정책은 종료일이 비어 있어 종료일만으로는 걸러지지 않는다
+            {**policy_row, "policy_no": "TEST-CLOSED-CODE", "application_period_type_code": "0057003",
+             "application_end_date": None},
+            {**policy_row, "policy_no": "TEST-ALWAYS", "application_period_type_code": "0057002",
+             "application_start_date": None, "application_end_date": None},
+            {**policy_row, "policy_no": "TEST-NO-CODE", "application_period_type_code": None},
         ]
         for row in rows:
-            insert = sql.SQL("INSERT INTO pg_temp.policy ({}) VALUES ({})").format(
-                sql.SQL(", ").join(map(sql.Identifier, row)),
-                sql.SQL(", ").join(map(sql.Placeholder, row)),
-            )
-            conn.execute(insert, row)
+            insert_policy(conn, row)
 
         documents = load_documents(conn, base_date=date(2026, 10, 2))
 
-    assert [d.metadata["policy_no"] for d in documents] == ["TEST-ENDS-TODAY", "TEST-NO-END", "TEST-OPEN"]
+    assert [d.metadata["policy_no"] for d in documents] == [
+        "TEST-ALWAYS", "TEST-ENDS-TODAY", "TEST-NO-CODE", "TEST-NO-END", "TEST-OPEN"
+    ]

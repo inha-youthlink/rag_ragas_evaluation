@@ -24,6 +24,9 @@ DETAIL_FIELDS = {
 # 온통청년 earnCndSeCd. 연소득 금액(min_income·max_income)의 단위는 만원이고, 0은 해당 경계 없음
 INCOME_ANY = "0043001"
 INCOME_ANNUAL = "0043002"
+# 온통청년 aplyPrdSeCd. 마감 정책은 종료일이 비어 있어 종료일만으로는 미마감과 구분되지 않는다
+APPLY_ALWAYS = "0057002"
+APPLY_CLOSED = "0057003"
 # 정책 지역 코드를 현재 시도·시군구 이름으로 해석한 조회용 View (youthlink-data-pipeline 지역 ETL).
 # 미해결 코드(UNRESOLVED)는 이름이 NULL이라 제외한다
 REGION_VIEW = "v_policy_region_resolved"
@@ -41,12 +44,13 @@ logger = logging.getLogger(__name__)
 SELECT_TARGET_POLICIES = """
     SELECT policy_no, policy_name, description, support_content,
            min_age, max_age, income_condition_code, min_income, max_income, income_etc,
-           application_start_date, application_end_date,
+           application_period_type_code, application_start_date, application_end_date,
            application_method, submission_documents, screening_method,
            additional_qualification, participation_exclusion,
            source_updated_at
     FROM policy
     WHERE NULLIF(BTRIM(description), '') IS NOT NULL
+      AND application_period_type_code IS DISTINCT FROM %(closed_code)s
       AND (application_end_date IS NULL OR application_end_date >= %(base_date)s)
     ORDER BY policy_no
 """
@@ -54,7 +58,7 @@ SELECT_TARGET_POLICIES = """
 
 def load_documents(conn: psycopg.Connection, base_date: date) -> list[Document]:
     with conn.cursor(row_factory=dict_row) as cur:
-        cur.execute(SELECT_TARGET_POLICIES, {"base_date": base_date})
+        cur.execute(SELECT_TARGET_POLICIES, {"base_date": base_date, "closed_code": APPLY_CLOSED})
         rows = cur.fetchall()
     regions = _load_regions(conn, [row["policy_no"] for row in rows])
     return [build_document(row, regions.get(row["policy_no"], ())) for row in rows]
@@ -78,7 +82,7 @@ def build_document(row: Mapping[str, Any], regions: Sequence[tuple[str, str]] = 
         _region_line(regions),
         _age_line(row["min_age"], row["max_age"]),
         _income_line(row["income_condition_code"], row["min_income"], row["max_income"], _clean(row["income_etc"])),
-        _period_line(row["application_start_date"], row["application_end_date"]),
+        _period_line(row["application_period_type_code"], row["application_start_date"], row["application_end_date"]),
         *_text_lines(row, DETAIL_FIELDS),
     ]
     updated_at = row["source_updated_at"]
@@ -155,7 +159,9 @@ def _manwon(value: int | None) -> str | None:
     return f"{value:,}만원" if value else None
 
 
-def _period_line(start: date | None, end: date | None) -> str | None:
+def _period_line(code: str | None, start: date | None, end: date | None) -> str | None:
+    if code == APPLY_ALWAYS:
+        return "신청 기간: 상시"
     if start and end:
         return f"신청 기간: {start.isoformat()} ~ {end.isoformat()}"
     if start:
