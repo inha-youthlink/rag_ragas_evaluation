@@ -33,7 +33,6 @@ YouthLink RAG를 RAGAS로 평가하는 저장소다. 서비스 DB의 `policy`로
 - 평가 실행은 run INSERT → samples INSERT → 응답 UPDATE → 점수 UPDATE → 집계 UPDATE 순서를 지킨다.
 - 이전 run 행은 수정하지 않는다.
 - 지표 계산이 실패하면 값은 NULL로 두고 `metadata.errors`에 기록한다. 0점으로 채우지 않는다.
-- 데이터셋 생성 LLM과 채점 LLM은 RAG `chat_model`과 다른 모델을 쓴다.
 - RAG 요청·응답 형식은 PRD "RAG 연동 계약"과 `../YouthLink_RAG/app/schemas/pipeline.py`를 따른다.
 - 평가 테이블 스키마를 바꾸면 `db/ragas_schema.sql`, `docs/Schema.md`, PRD를 같은 커밋에서 갱신한다.
 - 확정된 `golden_vN.jsonl`은 수정하지 않는다. 바꿀 때는 `golden_vN+1.jsonl`을 만든다.

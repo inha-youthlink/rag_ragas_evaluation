@@ -84,7 +84,7 @@
 | 생성기 | `TestsetGenerator(llm, embedding_model).generate_with_langchain_docs(docs, testset_size, query_distribution)` |
 | 질문 유형 | `[(SingleHopSpecificQuerySynthesizer(llm), 1.0)]` |
 | 한국어 | 생성기 프롬프트 한국어 adapt |
-| 모델 | RAG `chat_model`과 다른 LLM, `text-embedding-3-small` |
+| 모델 | `GEN_MODEL`, `text-embedding-3-small` |
 | `policy_no` 복원 | `reference_contexts`가 포함된 `Document.page_content` 매칭 (생성기가 문서를 분할할 수 있어 일치가 아닌 포함 검사) |
 | 사전 검증 | 10건 시험 생성 (짧은 문서 누락, 한국어 품질) |
 | 검수 | `reviewed = true`만 사용 |
@@ -125,7 +125,7 @@
 
 | 항목 | 값 |
 | --- | --- |
-| 채점 LLM | `llm_factory(<judge_model>, client=AsyncOpenAI())`, RAG `chat_model`과 다른 모델 |
+| 채점 LLM | `llm_factory(<judge_model>, client=AsyncOpenAI())` |
 | 호출 | `await metric.ascore(...)` → `result.value` |
 | 실패 | 해당 지표 NULL, `metadata.errors` 기록 |
 | 채점 프롬프트 | `answer_relevancy`는 고정 한국어 프롬프트 (영어 기본 프롬프트는 한국어 답변에서 영어 질문을 만들어 유사도가 낮아짐). LLM 번역(adapt)은 실행마다 문구가 달라져 쓰지 않음 |
