@@ -77,8 +77,10 @@
 | 항목 | 값 |
 | --- | --- |
 | 대상 | `description` 비어 있지 않음(NULL·공백 제외), `application_end_date` NULL 또는 기준일 당일 이후 |
-| 원천 텍스트 | `policy_name`, `description`, `support_content`, `min_age`/`max_age`, `min_income`/`max_income`/`income_etc`, `application_start_date`/`application_end_date`, `application_method`, `submission_documents`, `screening_method`, `additional_qualification`, `participation_exclusion` |
+| 원천 텍스트 | `policy_name`, `description`, `support_content`, `min_age`/`max_age`, `income_condition_code`(무관 / 연소득 `min_income`~`max_income` 만원 / 기타 `income_etc`), `application_start_date`/`application_end_date`, `application_method`, `submission_documents`, `screening_method`, `additional_qualification`, `participation_exclusion` |
 | 입력 변환 | 정책 1건 → `Document` 1개 (`metadata`: `policy_no`, `source_updated_at`) |
+| 정책 표본 | `--policy-limit N`: 정책 번호순 정렬 후 고정 시드로 N건 추출 (분석 비용 제한, 재실행 시 같은 표본 → 분석 캐시 재사용) |
+| 페르소나 | 청년정책 사용자 5명 고정 (대학생, 취업준비생, 사회초년생, 청년 창업자, 신혼부부 청년) |
 | 생성기 | `TestsetGenerator(llm, embedding_model).generate_with_langchain_docs(docs, testset_size, query_distribution)` |
 | 질문 유형 | `[(SingleHopSpecificQuerySynthesizer(llm), 1.0)]` |
 | 한국어 | 생성기 프롬프트 한국어 adapt |

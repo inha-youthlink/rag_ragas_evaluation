@@ -5,10 +5,11 @@ from types import SimpleNamespace
 
 import pytest
 from langchain_core.documents import Document
+from pydantic import SecretStr
 
 from ragas_eval.dataset.dataset import load_golden
 from ragas_eval.generate import generate
-from ragas_eval.generate.generate import build_records, match_policy, write_jsonl
+from ragas_eval.generate.generate import YOUTH_PERSONAS, build_records, match_policy, sample_documents, write_jsonl
 
 UPDATED_AT = "2026-09-30T00:00:00+09:00"
 
@@ -144,6 +145,79 @@ def test_generate_writes_candidates_and_returns_counts(tmp_path, monkeypatch):
     assert calls == [(2, 10, "test-gen-model")]
     assert (summary.written, summary.dropped) == (1, 1)
     assert [json.loads(line)["policy_no"] for line in out.read_text(encoding="utf-8").splitlines()] == ["TEST-0001"]
+
+
+MANY_DOCS = [doc(f"TEST-{i:04d}", f"정책명: 테스트 정책 {i:04d}번") for i in range(20)]
+
+
+def policy_nos(documents):
+    return [d.metadata["policy_no"] for d in documents]
+
+
+def test_sample_documents_is_reproducible_regardless_of_input_order():
+    first = sample_documents(MANY_DOCS, 5)
+    again = sample_documents(list(reversed(MANY_DOCS)), 5)
+
+    assert len(first) == 5
+    assert policy_nos(first) == sorted(policy_nos(first))
+    assert policy_nos(first) == policy_nos(again)
+
+
+@pytest.mark.parametrize("limit", [None, 20, 50])
+def test_sample_documents_keeps_all_when_limit_is_not_smaller(limit):
+    assert policy_nos(sample_documents(list(reversed(MANY_DOCS)), limit)) == policy_nos(MANY_DOCS)
+
+
+def test_generate_passes_only_sampled_policies_to_generator(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(generate, "get_settings", fake_settings)
+    monkeypatch.setattr(generate, "_load_target_documents", lambda settings: MANY_DOCS)
+
+    def fake_run(documents, testset_size, settings):
+        seen.extend(documents)
+        return [row([documents[0].page_content])]
+
+    monkeypatch.setattr(generate, "_run_generator", fake_run)
+
+    summary = generate.generate(testset_size=3, out_path=str(tmp_path / "c.jsonl"), policy_limit=5)
+
+    assert policy_nos(seen) == policy_nos(sample_documents(MANY_DOCS, 5))
+    assert summary.written == 1
+
+
+def test_youth_personas_have_unique_names_and_descriptions():
+    names = [p.name for p in YOUTH_PERSONAS]
+
+    assert len(names) >= 3
+    assert len(set(names)) == len(names)
+    assert all(p.role_description.strip() for p in YOUTH_PERSONAS)
+
+
+def test_run_generator_uses_youth_personas(monkeypatch):
+    captured = {}
+
+    class FakeGenerator:
+        def __init__(self, **kwargs):
+            captured["init"] = kwargs
+
+        def generate(self, **kwargs):
+            captured["generate"] = kwargs
+            return SimpleNamespace(to_list=lambda: [])
+
+    async def fake_synthesizer(api_key, model):
+        return SimpleNamespace(llm=None)
+
+    monkeypatch.setattr(generate, "TestsetGenerator", FakeGenerator)
+    monkeypatch.setattr(generate, "_korean_synthesizer", fake_synthesizer)
+    monkeypatch.setattr(generate, "build_knowledge_graph", lambda documents, **kwargs: "kg")
+    monkeypatch.setattr(generate, "make_llm", lambda model, client: "llm")
+    monkeypatch.setattr(generate, "OpenAIEmbeddings", lambda **kwargs: "emb")
+    settings = SimpleNamespace(openai_api_key=SecretStr("test-key"), gen_model="m", embedding_model="e")
+
+    generate._run_generator(DOCS, 3, settings)
+
+    assert captured["init"]["persona_list"] == list(YOUTH_PERSONAS)
+    assert captured["generate"]["num_personas"] == len(YOUTH_PERSONAS)
 
 
 def test_generate_without_target_policies_fails_before_llm(tmp_path, monkeypatch):

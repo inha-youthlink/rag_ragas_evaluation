@@ -16,6 +16,19 @@ def test_generate_uses_default_options():
     assert args.command == "generate"
     assert args.testset_size == 100
     assert args.out == "datasets/golden_candidates.jsonl"
+    assert args.policy_limit is None
+
+
+def test_generate_parses_policy_limit():
+    args = build_parser().parse_args(["generate", "--policy-limit", "150"])
+
+    assert args.policy_limit == 150
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "abc"])
+def test_generate_rejects_non_positive_policy_limit(value):
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["generate", "--policy-limit", value])
 
 
 def test_run_parses_golden_and_repeat():
@@ -100,7 +113,7 @@ def test_main_prints_generate_counts(monkeypatch, capsys):
     main(["generate", "--testset-size", "10", "--out", "datasets/candidates.jsonl"])
 
     out = capsys.readouterr().out
-    assert calls == [{"testset_size": 10, "out_path": "datasets/candidates.jsonl"}]
+    assert calls == [{"testset_size": 10, "out_path": "datasets/candidates.jsonl", "policy_limit": None}]
     assert "3건" in out and "1건" in out and "datasets/candidates.jsonl" in out
 
 

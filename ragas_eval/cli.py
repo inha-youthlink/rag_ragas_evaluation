@@ -8,6 +8,13 @@ from ragas_eval.report import report
 from ragas_eval.runner import runner
 
 
+def positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("1 이상이어야 함")
+    return number
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ragas_eval")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -15,6 +22,9 @@ def build_parser() -> argparse.ArgumentParser:
     generate_parser = sub.add_parser("generate", help="policy 테이블로 데이터셋 후보 생성")
     generate_parser.add_argument("--testset-size", type=int, default=100)
     generate_parser.add_argument("--out", default="datasets/golden_candidates.jsonl")
+    generate_parser.add_argument(
+        "--policy-limit", type=positive_int, default=None, help="대상 정책 중 고정 시드로 N건만 뽑아 생성 (분석 비용 제한)"
+    )
 
     run_parser = sub.add_parser("run", help="확정 데이터셋으로 평가 실행")
     run_parser.add_argument("--golden", required=True)
@@ -35,7 +45,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
 
     if args.command == "generate":
-        summary = generate.generate(testset_size=args.testset_size, out_path=args.out)
+        summary = generate.generate(testset_size=args.testset_size, out_path=args.out, policy_limit=args.policy_limit)
         print(f"후보 {summary.written}건 저장, 정책 매칭 실패·빈 값 {summary.dropped}건 제외: {args.out}")
     elif args.command == "run":
         outcomes = runner.run(

@@ -3,6 +3,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import random
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
@@ -38,6 +39,31 @@ NO_KEEPALIVE_LIMITS = type(DEFAULT_CONNECTION_LIMITS)(
 KG_CACHE_DIR = Path("datasets/.cache")
 # 확정 데이터셋은 수정하지 않는다(CLAUDE.md). 생성 결과로 덮어쓰지 않도록 막는다
 CONFIRMED_DATASET = re.compile(r"golden_v\d+\.jsonl", re.IGNORECASE)
+# 정책 표본 시드. 정책 목록이 같으면 항상 같은 표본이 나와 분석 캐시를 다시 쓸 수 있다
+SAMPLE_SEED = 20261010
+# ragas가 정책 내용으로 페르소나를 만들면 이름이 어긋나거나 말투가 어색해(golden_v0) 청년정책 사용자로 고정한다
+YOUTH_PERSONAS = (
+    Persona(
+        name="대학생",
+        role_description="20대 초반 대학생. 장학금, 주거, 교육 지원 정책의 신청 자격과 지원 금액을 알고 싶어 한다.",
+    ),
+    Persona(
+        name="취업준비생",
+        role_description="구직 중인 20대 후반 청년. 취업 지원, 직업 훈련, 구직활동 지원금을 찾고 신청 방법을 묻는다.",
+    ),
+    Persona(
+        name="사회초년생",
+        role_description="입사 1~2년 차 직장인. 월세, 자산 형성, 대출 지원 정책과 소득 기준 충족 여부를 확인하려 한다.",
+    ),
+    Persona(
+        name="청년 창업자",
+        role_description="창업을 준비하거나 사업을 운영하는 30대 초반 청년. 창업 자금, 임차료, 교육·컨설팅 지원을 찾는다.",
+    ),
+    Persona(
+        name="신혼부부 청년",
+        role_description="결혼한 지 얼마 안 된 30대 청년. 전세·주택 대출과 월세 지원의 조건과 지원 규모를 비교한다.",
+    ),
+)
 
 
 class GenerateSummary(NamedTuple):
@@ -102,10 +128,10 @@ def write_jsonl(records: Iterable[Mapping[str, Any]], path: str | Path) -> None:
     path.write_text("".join(lines), encoding="utf-8")
 
 
-def generate(testset_size: int, out_path: str) -> GenerateSummary:
+def generate(testset_size: int, out_path: str, policy_limit: int | None = None) -> GenerateSummary:
     _check_out_path(Path(out_path))
     settings = get_settings()
-    documents = _load_target_documents(settings)
+    documents = sample_documents(_load_target_documents(settings), policy_limit)
     if not documents:
         raise ValueError("대상 정책이 없어 생성하지 않음 (description이 있고 신청 기간이 남은 정책 0건)")
     rows = _run_generator(documents, testset_size, settings)
@@ -115,6 +141,15 @@ def generate(testset_size: int, out_path: str) -> GenerateSummary:
         raise ValueError(f"생성 결과 {dropped}건이 모두 제외되어 저장하지 않음")
     write_jsonl(records, out_path)
     return GenerateSummary(written=len(records), dropped=dropped)
+
+
+def sample_documents(documents: Sequence[Document], limit: int | None) -> list[Document]:
+    """정책 번호순으로 정렬한 뒤 고정 시드로 limit건을 고른다. limit이 없거나 전체보다 크면 전부 쓴다."""
+    ordered = sorted(documents, key=lambda d: d.metadata["policy_no"])
+    if limit is None or limit >= len(ordered):
+        return ordered
+    picked = random.Random(SAMPLE_SEED).sample(ordered, limit)
+    return sorted(picked, key=lambda d: d.metadata["policy_no"])
 
 
 def _check_out_path(path: Path) -> None:
@@ -195,8 +230,14 @@ def _run_generator(documents: Sequence[Document], testset_size: int, settings: S
     synthesizer.llm = llm
     cache_path = KG_CACHE_DIR / f"kg_{kg_cache_key(documents, settings.gen_model, settings.embedding_model)}.json"
     kg = build_knowledge_graph(documents, llm=llm, embeddings=embeddings, cache_path=cache_path)
-    generator = TestsetGenerator(llm=llm, embedding_model=embeddings, knowledge_graph=kg)
-    testset = generator.generate(testset_size=testset_size, query_distribution=[(synthesizer, 1.0)])
+    generator = TestsetGenerator(
+        llm=llm, embedding_model=embeddings, knowledge_graph=kg, persona_list=list(YOUTH_PERSONAS)
+    )
+    testset = generator.generate(
+        testset_size=testset_size,
+        query_distribution=[(synthesizer, 1.0)],
+        num_personas=len(YOUTH_PERSONAS),
+    )
     return testset.to_list()
 
 

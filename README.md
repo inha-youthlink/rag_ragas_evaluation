@@ -24,6 +24,8 @@ psql -d youthlink -f db/ragas_schema.sql
 ```bash
 # DB policy 읽기 → 질문·정답 후보 100건 생성 → datasets/에 저장 (검수 후 golden_v1.jsonl로 확정)
 python -m ragas_eval generate --testset-size 100 --out datasets/golden_candidates.jsonl
+# 정책을 고정 시드로 150건만 뽑아 생성 (분석 비용 제한)
+python -m ragas_eval generate --testset-size 130 --policy-limit 150
 
 # 확정 데이터셋으로 RAG 호출 → 채점 → 결과 DB 저장, 3회 반복
 python -m ragas_eval run --golden datasets/golden_v1.jsonl --repeat 3
